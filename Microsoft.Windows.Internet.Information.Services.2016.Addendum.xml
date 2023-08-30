@@ -1,0 +1,894 @@
+﻿<?xml version="1.0" encoding="utf-8"?><ManagementPack ContentReadable="true" SchemaVersion="2.0" OriginalSchemaVersion="1.1" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsl="http://www.w3.org/1999/XSL/Transform">
+  <Manifest>
+    <Identity>
+      <ID>Microsoft.Windows.Internet.Information.Services.2016.Addendum</ID>
+      <Version>1.0.0.3</Version>
+    </Identity>
+    <Name>Microsoft Windows Internet Information Services 2016+ Addendum</Name>
+    <References>
+      <Reference Alias="Health">
+        <ID>System.Health.Library</ID>
+        <Version>7.0.8433.0</Version>
+        <PublicKeyToken>31bf3856ad364e35</PublicKeyToken>
+      </Reference>
+      <Reference Alias="MSIGL">
+        <ID>Microsoft.SystemCenter.InstanceGroup.Library</ID>
+        <Version>7.5.8501.0</Version>
+        <PublicKeyToken>31bf3856ad364e35</PublicKeyToken>
+      </Reference>
+      <Reference Alias="MWIIS6">
+        <ID>Microsoft.Windows.InternetInformationServices.2016</ID>
+        <Version>10.0.0.0</Version>
+        <PublicKeyToken>31bf3856ad364e35</PublicKeyToken>
+      </Reference>
+      <Reference Alias="MWS6D">
+        <ID>Microsoft.Windows.Server.2016.Discovery</ID>
+        <Version>10.0.0.0</Version>
+        <PublicKeyToken>31bf3856ad364e35</PublicKeyToken>
+      </Reference>
+      <Reference Alias="MWSL">
+        <ID>Microsoft.Windows.Server.Library</ID>
+        <Version>6.0.7323.0</Version>
+        <PublicKeyToken>31bf3856ad364e35</PublicKeyToken>
+      </Reference>
+      <Reference Alias="SC">
+        <ID>Microsoft.SystemCenter.Library</ID>
+        <Version>7.0.8433.0</Version>
+        <PublicKeyToken>31bf3856ad364e35</PublicKeyToken>
+      </Reference>
+      <Reference Alias="System">
+        <ID>System.Library</ID>
+        <Version>7.5.8501.0</Version>
+        <PublicKeyToken>31bf3856ad364e35</PublicKeyToken>
+      </Reference>
+      <Reference Alias="Windows">
+        <ID>Microsoft.Windows.Library</ID>
+        <Version>7.5.8501.0</Version>
+        <PublicKeyToken>31bf3856ad364e35</PublicKeyToken>
+      </Reference>
+    </References>
+  </Manifest>
+  <TypeDefinitions>
+    <EntityTypes>
+      <ClassTypes>
+        <ClassType ID="Microsoft.Windows.Internet.Information.Services.2016.Enabled.Group" Accessibility="Public" Abstract="false" Base="MSIGL!Microsoft.SystemCenter.InstanceGroup" Hosted="false" Singleton="true" Extension="false" />
+      </ClassTypes>
+    </EntityTypes>
+    <ModuleTypes>
+      <DataSourceModuleType ID="Proactive.DailyTasks.IISAlerts.Close.Script.DataSource" Accessibility="Internal" Batching="false">
+        <Configuration>
+          <xsd:element minOccurs="1" type="xsd:integer" name="TimeoutSeconds" xmlns:xsd="http://www.w3.org/2001/XMLSchema" />
+        </Configuration>
+        <OverrideableParameters>
+          <OverrideableParameter ID="TimeoutSeconds" Selector="$Config/TimeoutSeconds$" ParameterType="int" />
+        </OverrideableParameters>
+        <ModuleImplementation Isolation="Any">
+          <Composite>
+            <MemberModules>
+              <DataSource ID="Scheduler" TypeID="System!System.Scheduler">
+                <Scheduler>
+                  <WeeklySchedule>
+                    <Windows>
+                      <Daily>
+                        <Start>10:11</Start>
+                        <End>10:31</End>
+                        <DaysOfWeekMask>62</DaysOfWeekMask>
+                      </Daily>
+                    </Windows>
+                  </WeeklySchedule>
+                  <ExcludeDates />
+                </Scheduler>
+              </DataSource>
+              <ProbeAction ID="PA" TypeID="Windows!Microsoft.Windows.PowerShellPropertyBagTriggerOnlyProbe">
+                <ScriptName>Proactive.DailyTasks.IISAlerts.Close.Script.DS.v1003.ps1</ScriptName>
+                <ScriptBody>
+#=================================================================================
+#  Script to gather IIS alerts and close datasource
+#
+#  Author: Kevin Justin
+#  v1.0
+#=================================================================================
+
+
+# Constants section - modify stuff here:
+#=================================================================================
+# Assign script name variable for use in event logging.  
+# ScriptName should be the same as the ID of the module that the script is contained in
+$ScriptName = "Proactive.DailyTasks.IISAlerts.Close.Script.Alert.DS.v1003.ps1"
+$EventID = "581"
+#=================================================================================
+
+# Starting Script section - All scripts get this
+#=================================================================================
+# Gather the start time of the script
+$StartTime = Get-Date
+#Set variable to be used in logging events
+$whoami = whoami
+# Load MOMScript API
+$momapi = New-Object -comObject MOM.ScriptAPI
+#Log script event that we are starting task
+$momapi.LogScriptEvent($ScriptName,$EventID,0,"`n Script is starting. `n Running as ($whoami).")
+#=================================================================================
+
+
+# PropertyBag Script section - Monitoring scripts get this
+#=================================================================================
+# Load SCOM PropertyBag function
+$bag = $momapi.CreatePropertyBag()
+#=================================================================================
+
+
+# Begin MAIN script section
+#=================================================================================
+
+#For a simple example - get files in Windows Temp:
+$date = get-date -uFormat "%Y-%m-%d"
+
+# Grab past 24 hours
+if ( (get-date).DayOfWeek -ne "Monday" )
+	{
+	$Time = [DateTime](Get-Date).AddDays(-1)
+	}
+if ( (get-date).DayOfWeek -eq "Monday" )
+	{
+	$Time = [DateTime](Get-Date).AddDays(-3)
+	}
+	
+$momapi.LogScriptEvent($ScriptName,$EventID,0,"Gather IIS 2016+ Alerts for date ($date).")
+ 
+
+# Gather WINOS alerts
+## Grab the MP, get the Monitors and Rules from the MP, then grab all alerts found inside the Monitors/Rules
+$SCOMCoreMP = Get-SCOMManagementPack -DisplayName "Microsoft Windows Server 2016 and 1709+ Internet Information Services 10"
+$SCOMCoreRules = $SCOMCoreMP.GetRules()
+$SCOMCoreMonitors = $SCOMCoreMP.GetMonitors()
+
+$SCOMCoreReportAlerts = Get-SCOMAlert | ? { ($_.Name -in $SCOMCoreRules.DisplayName) -or ($_.Name -in $SCOMCoreMonitors.DisplayName) }
+$SCOMCoreReportAlerts.Count
+
+$SCOMOpenReportAlerts = $SCOMCoreReportAlerts | ? { ( $_.ResolutionState -ne "255" ) }
+$SCOMOpenReportAlerts.Count
+
+$SCOMCoreRuleAlerts = Get-SCOMAlert | ? { ( $_.Name -in $SCOMCoreRules.DisplayName) -AND ( $_.ResolutionState -ne "255" ) }
+$SCOMCoreRuleAlerts.Count
+
+$SCOMCoreMonitorAlerts = Get-SCOMAlert | ? { ($_.Name -in $SCOMCoreMonitors.DisplayName ) -AND ( $_.ResolutionState -ne "255" ) }
+$SCOMCoreMonitorAlerts.Count
+
+$AutoClosed = $SCOMCoreMonitorAlerts.Count + $SCOMCoreRuleAlerts.Count
+$Test = $SCOMCoreReportAlerts.Count
+
+
+$momapi.LogScriptEvent($ScriptName,$EventID,0,"IIS 2016+ alerts gathered for ($date).")
+
+
+
+#
+# Build report
+#===================================
+$IISAMessage = @()
+
+if ($SCOMOpenReportAlerts.Count -eq 0 )
+	{
+	$Message = "ZERO IIS 2016+ alerts for ($date)"
+	$IISAMessage += "ZERO IIS 2016+ alerts for ($date)"
+	$momapi.LogScriptEvent($ScriptName,$EventID,0,"$Message")
+	}
+
+
+if ($SCOMOpenReportAlerts.Count -gt 0 )
+	{
+	$IISAMessage += ""
+	$IISAMessage += "Alert Count = $($SCOMOpenReportAlerts.Count)"
+	$IISAMessage += ""
+	$IISAMessage += "# IIS 2016+ Monitors auto-closed"
+	$IISAMessage += "#=========================================================="
+	$IISAMessage += "# Number of historical IIS alerts = $($SCOMCoreReportAlerts.Count)"
+	$IISAMessage += "# Number of OPEN IIS alert monitors AND rules = $($SCOMOpenReportAlerts.Count)"
+	$IISAMessage += "#=========================================================="
+	$IISAMessage += ""
+	$IISAMessage += "#==============================================="
+	$IISAMessage += "# Monitors AND Rules that were auto closed = $($AutoClosed)"
+	$IISAMessage += "#==============================================="
+	$IISAMessage += ""
+	#$IISAMessage += "#================================================"
+	#$IISAMessage += "# List of included Monitor/Rule names auto-closed"
+	#$IISAMessage += "#================================================"
+	#$IISAMessage += "# Monitors"
+	#$IISAMessage += $IISMonitorsToAutoClose | out-string
+	#$IISAMessage += "# Rules"
+	#$IISAMessage += $IISRulesToAutoClose | out-string
+	#$IISAMessage += "#============================================================"
+	#$IISAMessage += ""
+	}
+
+$IISAMessage
+
+$IISAMessage = $IISAMessage | out-string
+#============================================================
+
+
+  $Result = "GOOD"
+  $Message = "IIS Monitors auto-closed for ($date)"
+
+  $momapi.LogScriptEvent($ScriptName,$EventID,0,"`n# IIS Monitors auto-closed for ($date). `n `n$IISAMessage")
+
+#$bag.AddValue('Result',$Result)
+$bag.AddValue('Count',$Test)
+$bag.AddValue('Message',$Message)
+$bag.AddValue('Summary',$IISAMessage)
+
+
+# Return all bags
+$bag
+
+
+
+#
+# If Cleanup needed, array of report monitors
+
+# Reset Monitors Script
+# Put ps1 in mgmtpacks folder
+# https://sc.scomurr.com/scom-2012-monitor-reset-cleaning-up-the-environment/
+#	Download
+# https://gallery.technet.microsoft.com/SCOM-2012-Batch-reset-63a17534
+	
+#Alternate
+#https://gallery.technet.microsoft.com/scriptcenter/Auto-reset-script-for-d8b775ca
+
+
+
+
+if ( $SCOMCoreMonitorAlerts.Count -gt 0 )
+{
+foreach ($MonitorDisplayName in $SCOMCoreMonitorAlerts)
+	{
+	$Monitors = @(Get-SCOMMonitor -displayname $MonitorDisplayName)
+
+	# Set up monitor objects to reset
+	foreach ($Monitor in $Monitors)
+		{
+		$MonitorClass = Get-SCOMClass -Id $Monitor.Target.Id
+		$ActiveMonitors = Get-SCOMClassInstance -Class $MonitorClass | ? { ($_.healthstate -ne 'Success') -AND ( $_.healthstate -ne 'Uninitialized') -AND ($_.IsAvailable -eq $true) }
+		write-host "Found" + $ActiveMonitors.Count + "active monitors."
+		if ( $ActiveMonitors -ne $null)
+			{
+			foreach ($ActiveMonitor in $ActiveMonitors)
+				{
+				write-host " Resetting Health State on '" +$ActiveMonitor.FullName + "'" 
+				$ActiveMonitor.ResetMonitoringState($Monitor.ID)
+				}
+			}
+		}
+	}
+}
+
+$momapi.LogScriptEvent($ScriptName,$EventID,0,"IIS Monitors auto-close completed for ($date).")
+
+
+#
+# (Rules) Alerts to auto close after reset monitor
+# Resolve alerts after report built
+$SCOMCoreRuleAlerts | Resolve-SCOMAlert
+
+
+$momapi.LogScriptEvent($ScriptName,$EventID,0,"IIS alert rules resolved for ($date).")
+#=================================================================================
+# End MAIN script section
+ 
+  
+# End of script section
+#=================================================================================
+#Log an event for script ending and total execution time.
+$EndTime = Get-Date
+$ScriptTime = ($EndTime - $StartTime).TotalSeconds
+$momapi.LogScriptEvent($ScriptName,$EventID,0,"`n Script Completed. `n Script Runtime: ($ScriptTime) seconds.")
+#=================================================================================
+# End of script
+                </ScriptBody>
+                <TimeoutSeconds>$Config/TimeoutSeconds$</TimeoutSeconds>
+              </ProbeAction>
+            </MemberModules>
+            <Composition>
+              <Node ID="PA">
+                <Node ID="Scheduler" />
+              </Node>
+            </Composition>
+          </Composite>
+        </ModuleImplementation>
+        <OutputType>System!System.PropertyBagData</OutputType>
+      </DataSourceModuleType>
+      <DataSourceModuleType ID="Proactive.Microsoft.Windows.IIS.BaseEventProvider" Accessibility="Public" Batching="false">
+        <Configuration>
+          <IncludeSchemaTypes>
+            <SchemaType>Windows!Microsoft.Windows.ComputerNameSchema</SchemaType>
+          </IncludeSchemaTypes>
+          <xsd:element name="ComputerName" type="ComputerNameType" minOccurs="0" maxOccurs="1" xmlns:xsd="http://www.w3.org/2001/XMLSchema" />
+          <xsd:element name="LogName" type="xsd:string" xmlns:xsd="http://www.w3.org/2001/XMLSchema" />
+          <xsd:element name="AllowProxying" type="xsd:boolean" minOccurs="0" maxOccurs="1" xmlns:xsd="http://www.w3.org/2001/XMLSchema" />
+        </Configuration>
+        <ModuleImplementation Isolation="Any">
+          <Native>
+            <ClassID>B98BD20C-3CC8-4AFE-9F68-5702C74D73DB</ClassID>
+          </Native>
+        </ModuleImplementation>
+        <OutputType>Windows!Microsoft.Windows.EventData</OutputType>
+      </DataSourceModuleType>
+      <WriteActionModuleType ID="Proactive.DailyTasks.IISAlerts.Close.Script.Alert.WA" Accessibility="Internal" Batching="false">
+        <Configuration>
+          <xsd:element minOccurs="1" name="TimeoutSeconds" type="xsd:integer" xmlns:xsd="http://www.w3.org/2001/XMLSchema" />
+        </Configuration>
+        <OverrideableParameters>
+          <OverrideableParameter ID="TimeoutSeconds" Selector="$Config/TimeoutSeconds$" ParameterType="int" />
+        </OverrideableParameters>
+        <ModuleImplementation Isolation="Any">
+          <Composite>
+            <MemberModules>
+              <WriteAction ID="PSWA" TypeID="Windows!Microsoft.Windows.PowerShellWriteAction">
+                <ScriptName>Proactive.DailyTasks.IISAlerts.Close.Script.Alert.WA.v1003.ps1</ScriptName>
+                <ScriptBody>
+#=================================================================================
+#  Script to gather IIS alerts and close via on demand task
+#
+#  Author: Kevin Justin
+#  v1.0
+#=================================================================================
+
+
+# Constants section - modify stuff here:
+#=================================================================================
+# Assign script name variable for use in event logging.  
+# ScriptName should be the same as the ID of the module that the script is contained in
+$ScriptName = "Proactive.DailyTasks.IISAlerts.Close.Script.Alert.WA.v1003.ps1"
+$EventID = "581"
+#=================================================================================
+
+# Starting Script section - All scripts get this
+#=================================================================================
+# Gather the start time of the script
+$StartTime = Get-Date
+#Set variable to be used in logging events
+$whoami = whoami
+# Load MOMScript API
+$momapi = New-Object -comObject MOM.ScriptAPI
+#Log script event that we are starting task
+$momapi.LogScriptEvent($ScriptName,$EventID,0,"`n Script is starting. `n Running as ($whoami).")
+#=================================================================================
+
+
+# PropertyBag Script section - Monitoring scripts get this
+#=================================================================================
+# Load SCOM PropertyBag function
+$bag = $momapi.CreatePropertyBag()
+#=================================================================================
+
+
+# Begin MAIN script section
+#=================================================================================
+
+#For a simple example - get files in Windows Temp:
+$date = get-date -uFormat "%Y-%m-%d"
+
+# Grab past 24 hours
+if ( (get-date).DayOfWeek -ne "Monday" )
+	{
+	$Time = [DateTime](Get-Date).AddDays(-1)
+	}
+if ( (get-date).DayOfWeek -eq "Monday" )
+	{
+	$Time = [DateTime](Get-Date).AddDays(-3)
+	}
+	
+$momapi.LogScriptEvent($ScriptName,$EventID,0,"Gather IIS 2016+ Alerts for date ($date).")
+ 
+
+# Gather WINOS alerts
+## Grab the MP, get the Monitors and Rules from the MP, then grab all alerts found inside the Monitors/Rules
+$SCOMCoreMP = Get-SCOMManagementPack -DisplayName "Microsoft Windows Server 2016 and 1709+ Internet Information Services 10"
+$SCOMCoreRules = $SCOMCoreMP.GetRules()
+$SCOMCoreMonitors = $SCOMCoreMP.GetMonitors()
+
+$SCOMCoreReportAlerts = Get-SCOMAlert | ? { ($_.Name -in $SCOMCoreRules.DisplayName) -or ($_.Name -in $SCOMCoreMonitors.DisplayName) }
+$SCOMCoreReportAlerts.Count
+
+$SCOMOpenReportAlerts = $SCOMCoreReportAlerts | ? { ( $_.ResolutionState -ne "255" ) }
+$SCOMOpenReportAlerts.Count
+
+$SCOMCoreRuleAlerts = Get-SCOMAlert | ? { ( $_.Name -in $SCOMCoreRules.DisplayName) -AND ( $_.ResolutionState -ne "255" ) }
+$SCOMCoreRuleAlerts.Count
+
+$SCOMCoreMonitorAlerts = Get-SCOMAlert | ? { ($_.Name -in $SCOMCoreMonitors.DisplayName ) -AND ( $_.ResolutionState -ne "255" ) }
+$SCOMCoreMonitorAlerts.Count
+
+$AutoClosed = $SCOMCoreMonitorAlerts.Count + $SCOMCoreRuleAlerts.Count
+$Test = $SCOMCoreReportAlerts.Count
+
+
+$momapi.LogScriptEvent($ScriptName,$EventID,0,"IIS 2016+ alerts gathered for ($date).")
+
+
+
+#
+# Build report
+#===================================
+$IISAMessage = @()
+
+if ($SCOMOpenReportAlerts.Count -eq 0 )
+	{
+	$Message = "ZERO IIS 2016+ alerts for ($date)"
+	$IISAMessage += "ZERO IIS 2016+ alerts for ($date)"
+	$momapi.LogScriptEvent($ScriptName,$EventID,0,"$Message")
+	}
+
+if ($SCOMOpenReportAlerts.Count -gt 0 )
+	{
+	$IISAMessage += ""
+	$IISAMessage += "Alert Count = $($SCOMOpenReportAlerts.Count)"
+	$IISAMessage += ""
+	$IISAMessage += "# IIS Monitors auto-closed"
+	$IISAMessage += "#=========================================================="
+	$IISAMessage += "# Number of historical IIS alerts = $($SCOMCoreReportAlerts.Count)"
+	$IISAMessage += "# Number of OPEN IIS alert monitors AND rules = $($SCOMOpenReportAlerts.Count)"
+	$IISAMessage += "#=========================================================="
+	$IISAMessage += ""
+	$IISAMessage += "#==============================================="
+	$IISAMessage += "# Monitors AND Rules that were auto closed = $($AutoClosed)"
+	$IISAMessage += "#==============================================="
+	$IISAMessage += ""
+	#$IISAMessage += "#================================================"
+	#$IISAMessage += "# List of included Monitor/Rule names auto-closed"
+	#$IISAMessage += "#================================================"
+	#$IISAMessage += "# Monitors"
+	#$IISAMessage += $IISMonitorsToAutoClose | out-string
+	#$IISAMessage += "# Rules"
+	#$IISAMessage += $IISRulesToAutoClose | out-string
+	#$IISAMessage += "#============================================================"
+	#$IISAMessage += ""
+	}
+
+$IISAMessage
+
+$IISAMessage = $IISAMessage | out-string
+#============================================================
+
+
+  $Result = "GOOD"
+  $Message = "IIS Monitors auto-closed for ($date)"
+
+  $momapi.LogScriptEvent($ScriptName,$EventID,0,"`n# IIS Monitors auto-closed for ($date). `n `n$IISAMessage")
+
+#$bag.AddValue('Result',$Result)
+$bag.AddValue('Count',$Test)
+$bag.AddValue('Message',$Message)
+$bag.AddValue('Summary',$IISAMessage)
+
+
+# Return all bags
+$bag
+
+
+
+#
+# If Cleanup needed, array of report monitors
+
+# Reset Monitors Script
+# Put ps1 in mgmtpacks folder
+# https://sc.scomurr.com/scom-2012-monitor-reset-cleaning-up-the-environment/
+#	Download
+# https://gallery.technet.microsoft.com/SCOM-2012-Batch-reset-63a17534
+	
+#Alternate
+#https://gallery.technet.microsoft.com/scriptcenter/Auto-reset-script-for-d8b775ca
+
+
+
+
+if ( $SCOMCoreMonitorAlerts.Count -gt 0 )
+{
+foreach ($MonitorDisplayName in $SCOMCoreMonitorAlerts)
+	{
+	$Monitors = @(Get-SCOMMonitor -displayname $MonitorDisplayName)
+
+	# Set up monitor objects to reset
+	foreach ($Monitor in $Monitors)
+		{
+		$MonitorClass = Get-SCOMClass -Id $Monitor.Target.Id
+		$ActiveMonitors = Get-SCOMClassInstance -Class $MonitorClass | ? { ($_.healthstate -ne 'Success') -AND ( $_.healthstate -ne 'Uninitialized') -AND ($_.IsAvailable -eq $true) }
+		write-host "Found" + $ActiveMonitors.Count + "active monitors."
+		if ( $ActiveMonitors -ne $null)
+			{
+			foreach ($ActiveMonitor in $ActiveMonitors)
+				{
+				write-host " Resetting Health State on '" +$ActiveMonitor.FullName + "'" 
+				$ActiveMonitor.ResetMonitoringState($Monitor.ID)
+				}
+			}
+		}
+	}
+}
+
+$momapi.LogScriptEvent($ScriptName,$EventID,0,"IIS Monitors auto-close completed for ($date).")
+
+
+#
+# (Rules) Alerts to auto close after reset monitor
+# Resolve alerts after report built
+$SCOMCoreRuleAlerts | Resolve-SCOMAlert
+
+
+$momapi.LogScriptEvent($ScriptName,$EventID,0,"IIS alert rules resolved for ($date).")
+#=================================================================================
+# End MAIN script section
+ 
+  
+# End of script section
+#=================================================================================
+#Log an event for script ending and total execution time.
+$EndTime = Get-Date
+$ScriptTime = ($EndTime - $StartTime).TotalSeconds
+$momapi.LogScriptEvent($ScriptName,$EventID,0,"`n Script Completed. `n Script Runtime: ($ScriptTime) seconds.")
+#=================================================================================
+# End of script
+                </ScriptBody>
+                <TimeoutSeconds>$Config/TimeoutSeconds$</TimeoutSeconds>
+              </WriteAction>
+            </MemberModules>
+            <Composition>
+              <Node ID="PSWA" />
+            </Composition>
+          </Composite>
+        </ModuleImplementation>
+        <OutputType>System!System.BaseData</OutputType>
+        <InputType>System!System.BaseData</InputType>
+      </WriteActionModuleType>
+    </ModuleTypes>
+    <MonitorTypes>
+      <UnitMonitorType ID="Proactive.IIS.Repeated.Event.MonitorType" Accessibility="Public">
+        <MonitorTypeStates>
+          <MonitorTypeState ID="RepeatedEventRaised" NoDetection="false" />
+          <MonitorTypeState ID="TimerEventRaised" NoDetection="false" />
+        </MonitorTypeStates>
+        <Configuration>
+          <IncludeSchemaTypes>
+            <SchemaType>System!System.ExpressionEvaluatorSchema</SchemaType>
+          </IncludeSchemaTypes>
+          <xsd:element name="ComputerName" type="xsd:string" xmlns:xsd="http://www.w3.org/2001/XMLSchema" />
+          <xsd:element name="LogName" type="xsd:string" xmlns:xsd="http://www.w3.org/2001/XMLSchema" />
+          <xsd:element name="ErrorExpression" type="ExpressionType" xmlns:xsd="http://www.w3.org/2001/XMLSchema" />
+          <xsd:element name="AutoResolveInterval" type="xsd:unsignedInt" xmlns:xsd="http://www.w3.org/2001/XMLSchema" />
+          <xsd:element name="TimerWindowInSeconds" type="xsd:unsignedInt" xmlns:xsd="http://www.w3.org/2001/XMLSchema" />
+          <xsd:element name="RepeatCount" type="xsd:unsignedInt" xmlns:xsd="http://www.w3.org/2001/XMLSchema" />
+        </Configuration>
+        <MonitorImplementation>
+          <MemberModules>
+            <DataSource ID="ErrorDataSource" TypeID="Windows!Microsoft.Windows.BaseEventProvider">
+              <ComputerName>$Config/ComputerName$</ComputerName>
+              <LogName>$Config/LogName$</LogName>
+            </DataSource>
+            <ProbeAction ID="OnDemandReset" TypeID="System!System.PassThroughProbe" />
+            <ConditionDetection ID="ErrorFilterCondition" TypeID="System!System.ExpressionFilter">
+              <Expression>$Config/ErrorExpression$</Expression>
+            </ConditionDetection>
+            <ConditionDetection ID="RepeatedDataCondition" TypeID="System!System.ConsolidatorCondition">
+              <Consolidator>
+                <ConsolidationProperties />
+                <TimeControl>
+                  <WithinTimeSchedule>
+                    <Interval>$Config/TimerWindowInSeconds$</Interval>
+                  </WithinTimeSchedule>
+                </TimeControl>
+                <CountingCondition>
+                  <Count>$Config/RepeatCount$</Count>
+                  <CountMode>OnNewItemTestOutputRestart_OnTimerSlideByOne</CountMode>
+                </CountingCondition>
+              </Consolidator>
+            </ConditionDetection>
+            <ConditionDetection ID="TimerCondition" TypeID="System!System.TimerCondition">
+              <TimerWaitInSeconds>$Config/AutoResolveInterval$</TimerWaitInSeconds>
+            </ConditionDetection>
+          </MemberModules>
+          <RegularDetections>
+            <RegularDetection MonitorTypeStateID="RepeatedEventRaised">
+              <Node ID="RepeatedDataCondition">
+                <Node ID="ErrorFilterCondition">
+                  <Node ID="ErrorDataSource" />
+                </Node>
+              </Node>
+            </RegularDetection>
+            <RegularDetection MonitorTypeStateID="TimerEventRaised">
+              <Node ID="TimerCondition">
+                <Node ID="RepeatedDataCondition">
+                  <Node ID="ErrorFilterCondition">
+                    <Node ID="ErrorDataSource" />
+                  </Node>
+                </Node>
+              </Node>
+            </RegularDetection>
+          </RegularDetections>
+          <OnDemandDetections>
+            <OnDemandDetection MonitorTypeStateID="TimerEventRaised">
+              <Node ID="OnDemandReset" />
+            </OnDemandDetection>
+          </OnDemandDetections>
+        </MonitorImplementation>
+      </UnitMonitorType>
+      <UnitMonitorType ID="Proactive.Microsoft.Windows.IIS.SingleEventLogTimer2StateMonitorType" Accessibility="Public">
+        <MonitorTypeStates>
+          <MonitorTypeState ID="EventRaised" NoDetection="false" />
+          <MonitorTypeState ID="TimerEventRaised" NoDetection="false" />
+        </MonitorTypeStates>
+        <Configuration>
+          <IncludeSchemaTypes>
+            <SchemaType>System!System.ExpressionEvaluatorSchema</SchemaType>
+          </IncludeSchemaTypes>
+          <xsd:element name="ComputerName" type="xsd:string" xmlns:xsd="http://www.w3.org/2001/XMLSchema" />
+          <xsd:element name="LogName" type="xsd:string" xmlns:xsd="http://www.w3.org/2001/XMLSchema" />
+          <xsd:element name="Expression" type="ExpressionType" xmlns:xsd="http://www.w3.org/2001/XMLSchema" />
+          <xsd:element name="TimerWaitInSeconds" type="xsd:integer" xmlns:xsd="http://www.w3.org/2001/XMLSchema" />
+          <xsd:element name="MatchCount" type="xsd:integer" xmlns:xsd="http://www.w3.org/2001/XMLSchema" />
+        </Configuration>
+        <OverrideableParameters>
+          <OverrideableParameter ID="MatchCount" Selector="$Config/MatchCount$" ParameterType="int" />
+        </OverrideableParameters>
+        <MonitorImplementation>
+          <MemberModules>
+            <DataSource ID="DataSource" TypeID="Windows!Microsoft.Windows.BaseEventProvider">
+              <ComputerName>$Config/ComputerName$</ComputerName>
+              <LogName>$Config/LogName$</LogName>
+            </DataSource>
+            <ProbeAction ID="OnDemandReset" TypeID="System!System.PassThroughProbe" />
+            <ConditionDetection ID="FilterCondition" TypeID="System!System.ExpressionFilter">
+              <Expression>$Config/Expression$</Expression>
+            </ConditionDetection>
+            <ConditionDetection ID="TimerCondition" TypeID="System!System.TimerCondition">
+              <TimerWaitInSeconds>$Config/TimerWaitInSeconds$</TimerWaitInSeconds>
+            </ConditionDetection>
+            <ConditionDetection ID="ThresholdNotBreached" TypeID="System!System.LogicalSet.ExpressionFilter">
+              <Expression>
+                <SimpleExpression>
+                  <ValueExpression>
+                    <XPathQuery Type="Double">Value</XPathQuery>
+                  </ValueExpression>
+                  <Operator>LessEqual</Operator>
+                  <ValueExpression>
+                    <Value Type="Double">$Config/MatchCount$</Value>
+                  </ValueExpression>
+                </SimpleExpression>
+              </Expression>
+              <EmptySet>Block</EmptySet>
+              <SetEvaluation>Any</SetEvaluation>
+            </ConditionDetection>
+            <ConditionDetection ID="ThresholdBreached" TypeID="System!System.LogicalSet.ExpressionFilter">
+              <Expression>
+                <SimpleExpression>
+                  <ValueExpression>
+                    <XPathQuery Type="Double">Value</XPathQuery>
+                  </ValueExpression>
+                  <Operator>Greater</Operator>
+                  <ValueExpression>
+                    <Value Type="Double">$Config/MatchCount$</Value>
+                  </ValueExpression>
+                </SimpleExpression>
+              </Expression>
+              <EmptySet>Passthrough</EmptySet>
+              <SetEvaluation>Any</SetEvaluation>
+            </ConditionDetection>
+          </MemberModules>
+          <RegularDetections>
+            <RegularDetection MonitorTypeStateID="EventRaised">
+              <Node ID="FilterCondition">
+                <Node ID="DataSource" />
+              </Node>
+            </RegularDetection>
+            <RegularDetection MonitorTypeStateID="TimerEventRaised">
+              <Node ID="TimerCondition">
+                <Node ID="FilterCondition">
+                  <Node ID="DataSource" />
+                </Node>
+              </Node>
+            </RegularDetection>
+          </RegularDetections>
+          <OnDemandDetections>
+            <OnDemandDetection MonitorTypeStateID="TimerEventRaised">
+              <Node ID="OnDemandReset" />
+            </OnDemandDetection>
+          </OnDemandDetections>
+        </MonitorImplementation>
+      </UnitMonitorType>
+    </MonitorTypes>
+  </TypeDefinitions>
+  <Monitoring>
+    <Discoveries>
+      <Discovery ID="Microsoft.Windows.Internet.Information.Services.2016.Enabled.Group.Discovery" Enabled="true" Target="Microsoft.Windows.Internet.Information.Services.2016.Enabled.Group" ConfirmDelivery="false" Remotable="true" Priority="Normal">
+        <Category>Discovery</Category>
+        <DiscoveryTypes>
+          <DiscoveryRelationship TypeID="MSIGL!Microsoft.SystemCenter.InstanceGroupContainsEntities" />
+        </DiscoveryTypes>
+        <DataSource ID="GroupPopulationDataSource" TypeID="SC!Microsoft.SystemCenter.GroupPopulator">
+          <RuleId>$MPElement$</RuleId>
+          <GroupInstanceId>$MPElement[Name="Microsoft.Windows.Internet.Information.Services.2016.Enabled.Group"]$</GroupInstanceId>
+          <MembershipRules>
+            <MembershipRule>
+              <MonitoringClass>$MPElement[Name="Windows!Microsoft.Windows.Computer"]$</MonitoringClass>
+              <RelationshipClass>$MPElement[Name="MSIGL!Microsoft.SystemCenter.InstanceGroupContainsEntities"]$</RelationshipClass>
+              <Expression>
+                <RegExExpression>
+                  <ValueExpression>
+                    <Property>$MPElement[Name="Windows!Microsoft.Windows.Computer"]/PrincipalName$</Property>
+                  </ValueExpression>
+                  <Operator>MatchesRegularExpression</Operator>
+                  <Pattern>(?i)sweb|AA|FF|GKO|MM|SMTP|SPPUB|NGEEA1D311P</Pattern>
+                </RegExExpression>
+              </Expression>
+            </MembershipRule>
+          </MembershipRules>
+        </DataSource>
+      </Discovery>
+    </Discoveries>
+    <Rules>
+      <Rule ID="Proactive.DailyTasks.IISAlerts.Report.Script.Alert.Rule" Enabled="true" Target="SC!Microsoft.SystemCenter.AllManagementServersPool" ConfirmDelivery="true" Remotable="true" Priority="Normal" DiscardLevel="100">
+        <Category>Alert</Category>
+        <DataSources>
+          <DataSource ID="DS" TypeID="Proactive.DailyTasks.IISAlerts.Close.Script.DataSource">
+            <TimeoutSeconds>900</TimeoutSeconds>
+          </DataSource>
+        </DataSources>
+        <WriteActions>
+          <WriteAction ID="WA" TypeID="Health!System.Health.GenerateAlert">
+            <Priority>1</Priority>
+            <Severity>0</Severity>
+            <AlertMessageId>$MPElement[Name="Proactive.DailyTasks.IISAlerts.Report.Script.Alert.Rule.AlertMessage"]$</AlertMessageId>
+            <AlertParameters>
+              <AlertParameter1>$Data/Property[@Name='Count']$</AlertParameter1>
+              <AlertParameter2>$Data/Property[@Name='Message']$</AlertParameter2>
+              <AlertParameter3>$Data/Property[@Name='Summary']$</AlertParameter3>
+            </AlertParameters>
+            <Suppression>
+              <SuppressionValue>$Data/Property[@Name='Message']$</SuppressionValue>
+            </Suppression>
+          </WriteAction>
+        </WriteActions>
+      </Rule>
+      <Rule ID="Proactive.DailyTasks.IISAlerts.Report.Script.Task.Alert.Rule" Enabled="true" Target="SC!Microsoft.SystemCenter.AllManagementServersPool" ConfirmDelivery="true" Remotable="true" Priority="Normal" DiscardLevel="100">
+        <Category>Alert</Category>
+        <DataSources>
+          <DataSource ID="DS" TypeID="Windows!Microsoft.Windows.EventProvider">
+            <LogName>Operations Manager</LogName>
+            <Expression>
+              <And>
+                <Expression>
+                  <SimpleExpression>
+                    <ValueExpression>
+                      <XPathQuery Type="UnsignedInteger">EventDisplayNumber</XPathQuery>
+                    </ValueExpression>
+                    <Operator>Equal</Operator>
+                    <ValueExpression>
+                      <Value Type="UnsignedInteger">581</Value>
+                    </ValueExpression>
+                  </SimpleExpression>
+                </Expression>
+                <Expression>
+                  <SimpleExpression>
+                    <ValueExpression>
+                      <XPathQuery Type="String">PublisherName</XPathQuery>
+                    </ValueExpression>
+                    <Operator>Equal</Operator>
+                    <ValueExpression>
+                      <Value Type="String">Health Service Script</Value>
+                    </ValueExpression>
+                  </SimpleExpression>
+                </Expression>
+                <Expression>
+                  <RegExExpression>
+                    <ValueExpression>
+                      <XPathQuery Type="String">EventDescription</XPathQuery>
+                    </ValueExpression>
+                    <Operator>ContainsSubstring</Operator>
+                    <Pattern>IIS Monitors auto-closed for </Pattern>
+                  </RegExExpression>
+                </Expression>
+              </And>
+            </Expression>
+          </DataSource>
+        </DataSources>
+        <WriteActions>
+          <WriteAction ID="Alert" TypeID="Health!System.Health.GenerateAlert">
+            <Priority>1</Priority>
+            <Severity>0</Severity>
+            <AlertName />
+            <AlertDescription />
+            <AlertOwner />
+            <AlertMessageId>$MPElement[Name="Proactive.DailyTasks.IISAlerts.Report.Script.Task.Rule.AlertMessage"]$</AlertMessageId>
+            <AlertParameters>
+              <AlertParameter1>$Data/EventDescription$</AlertParameter1>
+            </AlertParameters>
+            <Suppression />
+          </WriteAction>
+        </WriteActions>
+      </Rule>
+    </Rules>
+    <Tasks>
+      <Task ID="Proactive.DailyTasks.IISAlerts.Report.Script.Task" Accessibility="Public" Enabled="true" Target="SC!Microsoft.SystemCenter.AllManagementServersPool" Timeout="120" Remotable="true">
+        <Category>Custom</Category>
+        <WriteAction ID="PSWA" TypeID="Proactive.DailyTasks.IISAlerts.Close.Script.Alert.WA">
+          <TimeoutSeconds>900</TimeoutSeconds>
+        </WriteAction>
+      </Task>
+    </Tasks>
+    <Overrides>
+      <DiscoveryPropertyOverride ID="Override.Microsoft.Windows.InternetInformationServices.10.0.ServerRole.Discovery" Context="MWS6D!Microsoft.Windows.Server.10.0.Computer" Enforced="false" Discovery="MWIIS6!Microsoft.Windows.InternetInformationServices.10.0.ServerRole.Discovery.Rule" Property="Enabled">
+        <Value>false</Value>
+      </DiscoveryPropertyOverride>
+    </Overrides>
+  </Monitoring>
+  <Presentation>
+    <StringResources>
+      <StringResource ID="Proactive.DailyTasks.IISAlerts.Report.Script.Alert.Rule.AlertMessage" />
+      <StringResource ID="Proactive.DailyTasks.IISAlerts.Report.Script.Task.Rule.AlertMessage" />
+    </StringResources>
+  </Presentation>
+  <LanguagePacks>
+    <LanguagePack ID="ENU" IsDefault="false">
+      <DisplayStrings>
+        <DisplayString ElementID="Microsoft.Windows.Internet.Information.Services.2016.Addendum">
+          <Name>Microsoft Windows Internet Information Services 2016 Addendum</Name>
+          <Description>
+v1.0.0.3 18 Jul 2023 Updated reports to informational
+v1.0.0.1 19 Jan 2023 Updates for Get method, daily reports/closure automation
+v1.0.0.0  2 Aug 2022 Initial pack with automated closure, reports, OFF/ON logic for IIS</Description>
+        </DisplayString>
+        <DisplayString ElementID="Microsoft.Windows.Internet.Information.Services.2016.Enabled.Group">
+          <Name>Microsoft Windows Internet Information Services IIS 2016 Enabled Servers</Name>
+          <Description>Microsoft Windows Internet Information Services IIS 2016 Enabled Servers</Description>
+        </DisplayString>
+        <DisplayString ElementID="Proactive.DailyTasks.IISAlerts.Close.Script.DataSource">
+          <Name>Proactive DailyTasks IISAlerts report and auto-close DataSource</Name>
+          <Description>This datasource generates IISAlerts report and auto-close DataSource</Description>
+        </DisplayString>
+        <DisplayString ElementID="Proactive.Microsoft.Windows.IIS.BaseEventProvider">
+          <Name>Proactive Microsoft Windows IIS BaseEventProvider DataSource</Name>
+          <Description>This datasource updates IIS base event provider with more options</Description>
+        </DisplayString>
+        <DisplayString ElementID="Proactive.DailyTasks.IISAlerts.Close.Script.Alert.WA">
+          <Name>Proactive DailyTasks IISAlerts report and auto-close on-demand task</Name>
+          <Description>This write-action task generates IISAlerts report and auto-close DataSource</Description>
+        </DisplayString>
+        <DisplayString ElementID="Proactive.IIS.Repeated.Event.MonitorType">
+          <Name>Proactive IIS Repeated Event MonitorType</Name>
+        </DisplayString>
+        <DisplayString ElementID="Proactive.Microsoft.Windows.IIS.SingleEventLogTimer2StateMonitorType">
+          <Name>Proactive Microsoft Windows IIS Single Event log with Timer and Matchcount MonitorType</Name>
+        </DisplayString>
+        <DisplayString ElementID="Microsoft.Windows.Internet.Information.Services.2016.Enabled.Group.Discovery">
+          <Name>Populate Microsoft Windows Internet Information Services IIS 2016 Enabled Servers</Name>
+          <Description>This discovery rule populates the group 'Microsoft Windows Internet Information Services IIS 2016 Enabled Servers'</Description>
+        </DisplayString>
+        <DisplayString ElementID="Proactive.DailyTasks.IISAlerts.Report.Script.Alert.Rule">
+          <Name>Proactive DailyTasks IISAlerts Report Script Alert Rule</Name>
+          <Description>Proactive Scheduled rule to kick off datasource at 0611 M-F</Description>
+        </DisplayString>
+        <DisplayString ElementID="Proactive.DailyTasks.IISAlerts.Report.Script.Alert.Rule.AlertMessage">
+          <Name>Proactive DailyTasks IISAlerts Report Script Alert Rule</Name>
+          <Description>{1}
+
+{2}</Description>
+        </DisplayString>
+        <DisplayString ElementID="Proactive.DailyTasks.IISAlerts.Report.Script.Task.Alert.Rule">
+          <Name>Proactive DailyTasks IISAlerts task Report Manual Task Rule</Name>
+        </DisplayString>
+        <DisplayString ElementID="Proactive.DailyTasks.IISAlerts.Report.Script.Task.Rule.AlertMessage">
+          <Name>Proactive DailyTasks IISAlerts Report Script Task Rule Alert</Name>
+          <Description>{0}</Description>
+        </DisplayString>
+        <DisplayString ElementID="Proactive.DailyTasks.IISAlerts.Report.Script.Task">
+          <Name>Proactive DailyTasks IISAlerts Autoclose Report Script Task</Name>
+          <Description>Proactive DailyTasks IISAlerts AutoClose task to kick off on-demand</Description>
+        </DisplayString>
+        <DisplayString ElementID="Override.Microsoft.Windows.InternetInformationServices.10.0.ServerRole.Discovery">
+          <Name>NotUsed</Name>
+          <Description>Created 2016-10-28 Disable IIS discovery for servers</Description>
+        </DisplayString>
+      </DisplayStrings>
+    </LanguagePack>
+  </LanguagePacks>
+</ManagementPack>

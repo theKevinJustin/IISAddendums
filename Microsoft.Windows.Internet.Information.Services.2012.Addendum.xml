@@ -1,0 +1,1097 @@
+﻿<?xml version="1.0" encoding="utf-8"?><ManagementPack ContentReadable="true" SchemaVersion="2.0" OriginalSchemaVersion="1.1" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsl="http://www.w3.org/1999/XSL/Transform">
+  <Manifest>
+    <Identity>
+      <ID>Microsoft.Windows.Internet.Information.Services.2012.Addendum</ID>
+      <Version>1.0.0.3</Version>
+    </Identity>
+    <Name>Microsoft Windows Internet Information Services 2012 Addendum</Name>
+    <References>
+      <Reference Alias="Health">
+        <ID>System.Health.Library</ID>
+        <Version>7.0.8433.0</Version>
+        <PublicKeyToken>31bf3856ad364e35</PublicKeyToken>
+      </Reference>
+      <Reference Alias="MSIGL">
+        <ID>Microsoft.SystemCenter.InstanceGroup.Library</ID>
+        <Version>7.5.8501.0</Version>
+        <PublicKeyToken>31bf3856ad364e35</PublicKeyToken>
+      </Reference>
+      <Reference Alias="MWSL">
+        <ID>Microsoft.Windows.Server.Library</ID>
+        <Version>6.0.7310.0</Version>
+        <PublicKeyToken>31bf3856ad364e35</PublicKeyToken>
+      </Reference>
+      <Reference Alias="MWIIS2">
+        <ID>Microsoft.Windows.InternetInformationServices.2012</ID>
+        <Version>7.0.10165.0</Version>
+        <PublicKeyToken>31bf3856ad364e35</PublicKeyToken>
+      </Reference>
+      <Reference Alias="SC">
+        <ID>Microsoft.SystemCenter.Library</ID>
+        <Version>7.0.8433.0</Version>
+        <PublicKeyToken>31bf3856ad364e35</PublicKeyToken>
+      </Reference>
+      <Reference Alias="System">
+        <ID>System.Library</ID>
+        <Version>7.5.8501.0</Version>
+        <PublicKeyToken>31bf3856ad364e35</PublicKeyToken>
+      </Reference>
+      <Reference Alias="Windows">
+        <ID>Microsoft.Windows.Library</ID>
+        <Version>7.5.8501.0</Version>
+        <PublicKeyToken>31bf3856ad364e35</PublicKeyToken>
+      </Reference>
+    </References>
+  </Manifest>
+  <TypeDefinitions>
+    <EntityTypes>
+      <ClassTypes>
+        <ClassType ID="Microsoft.Windows.Internet.Information.Services.2012.Enabled.Group" Accessibility="Public" Abstract="false" Base="MSIGL!Microsoft.SystemCenter.InstanceGroup" Hosted="false" Singleton="true" Extension="false" />
+      </ClassTypes>
+    </EntityTypes>
+    <ModuleTypes>
+      <DataSourceModuleType ID="Proactive.DailyTasks.IIS2012Alerts.Close.Script.DataSource" Accessibility="Internal" Batching="false">
+        <Configuration>
+          <xsd:element minOccurs="1" type="xsd:integer" name="TimeoutSeconds" xmlns:xsd="http://www.w3.org/2001/XMLSchema" />
+        </Configuration>
+        <OverrideableParameters>
+          <OverrideableParameter ID="TimeoutSeconds" Selector="$Config/TimeoutSeconds$" ParameterType="int" />
+        </OverrideableParameters>
+        <ModuleImplementation Isolation="Any">
+          <Composite>
+            <MemberModules>
+              <DataSource ID="Scheduler" TypeID="System!System.Scheduler">
+                <Scheduler>
+                  <WeeklySchedule>
+                    <Windows>
+                      <Daily>
+                        <Start>10:14</Start>
+                        <End>10:34</End>
+                        <DaysOfWeekMask>62</DaysOfWeekMask>
+                      </Daily>
+                    </Windows>
+                  </WeeklySchedule>
+                  <ExcludeDates />
+                </Scheduler>
+              </DataSource>
+              <ProbeAction ID="PA" TypeID="Windows!Microsoft.Windows.PowerShellPropertyBagTriggerOnlyProbe">
+                <ScriptName>Proactive.DailyTasks.IIS2012Alerts.Close.Script.DS.v1003.ps1</ScriptName>
+                <ScriptBody>
+#=================================================================================
+#  Script to gather IIS2012 alerts and close datasource
+#
+#  Author: Kevin Justin
+#  v1.0
+#=================================================================================
+
+
+# Constants section - modify stuff here:
+#=================================================================================
+# Assign script name variable for use in event logging.  
+# ScriptName should be the same as the ID of the module that the script is contained in
+$ScriptName = "Proactive.DailyTasks.IIS2012Alerts.Close.Script.Alert.DS.v1003.ps1"
+$EventID = "581"
+#=================================================================================
+
+# Starting Script section - All scripts get this
+#=================================================================================
+# Gather the start time of the script
+$StartTime = Get-Date
+#Set variable to be used in logging events
+$whoami = whoami
+# Load MOMScript API
+$momapi = New-Object -comObject MOM.ScriptAPI
+#Log script event that we are starting task
+$momapi.LogScriptEvent($ScriptName,$EventID,0,"`n Script is starting. `n Running as ($whoami).")
+#=================================================================================
+
+
+# PropertyBag Script section - Monitoring scripts get this
+#=================================================================================
+# Load SCOM PropertyBag function
+$bag = $momapi.CreatePropertyBag()
+#=================================================================================
+
+
+# Begin MAIN script section
+#=================================================================================
+
+#For a simple example - get files in Windows Temp:
+$date = get-date -uFormat "%Y-%m-%d"
+
+# Grab past 24 hours
+if ( (get-date).DayOfWeek -ne "Monday" )
+	{
+	$Time = [DateTime](Get-Date).AddDays(-1)
+	}
+if ( (get-date).DayOfWeek -eq "Monday" )
+	{
+	$Time = [DateTime](Get-Date).AddDays(-3)
+	}
+	
+$momapi.LogScriptEvent($ScriptName,$EventID,0,"Gather IIS2012 Alerts for date ($date).")
+ 
+# Gather WINOS alerts
+## Grab the MP, get the Monitors and Rules from the MP, then grab all alerts found inside the Monitors/Rules
+$SCOMCoreMP = Get-SCOMManagementPack -DisplayName "Microsoft Windows Server 2012 Internet Information Services 8"
+$SCOMCoreRules = $SCOMCoreMP.GetRules()
+$SCOMCoreMonitors = $SCOMCoreMP.GetMonitors()
+
+$SCOMCoreReportAlerts = Get-SCOMAlert | ? { ($_.Name -in $SCOMCoreRules.DisplayName) -or ($_.Name -in $SCOMCoreMonitors.DisplayName) }
+$SCOMCoreReportAlerts.Count
+
+$SCOMOpenReportAlerts = $SCOMCoreReportAlerts | ? { ( $_.ResolutionState -ne "255" ) }
+$SCOMOpenReportAlerts.Count
+
+$SCOMCoreRuleAlerts = Get-SCOMAlert | ? { ( $_.Name -in $SCOMCoreRules.DisplayName) -AND ( $_.ResolutionState -ne "255" ) }
+$SCOMCoreRuleAlerts.Count
+
+$SCOMCoreMonitorAlerts = Get-SCOMAlert | ? { ($_.Name -in $SCOMCoreMonitors.DisplayName ) -AND ( $_.ResolutionState -ne "255" ) }
+$SCOMCoreMonitorAlerts.Count
+
+$AutoClosed = $SCOMCoreMonitorAlerts.Count + $SCOMCoreRuleAlerts.Count
+$Test = $SCOMCoreReportAlerts.Count
+
+
+$momapi.LogScriptEvent($ScriptName,$EventID,0,"IIS alerts gathered for ($date).")
+
+  
+#
+# Build report
+#===================================
+$IISAMessage = @()
+
+if ($SCOMOpenReportAlerts.Count -eq 0 )
+	{
+	$Message = "ZERO IIS 2012 alerts for ($date)"
+	$IISAMessage += "ZERO IIS 2012 alerts for ($date)"
+	$momapi.LogScriptEvent($ScriptName,$EventID,0,"$Message")
+	}	
+
+
+if ($SCOMOpenReportAlerts.Count -gt 0 )
+	{
+	$IISAMessage += ""
+	$IISAMessage += "Alert Count = $($SCOMOpenReportAlerts.Count)"
+	$IISAMessage += ""
+	$IISAMessage += "# IIS 2012 Monitors auto-closed"
+	$IISAMessage += "#=========================================================="
+	$IISAMessage += "# Number of historical IIS 2012 alerts = $($SCOMCoreReportAlerts.Count)"
+	$IISAMessage += "# Number of OPEN IIS 2012 alert monitors AND rules = $($SCOMOpenReportAlerts.Count)"
+	$IISAMessage += "#=========================================================="
+	$IISAMessage += ""
+	$IISAMessage += "#==============================================="
+	$IISAMessage += "# Monitors AND Rules that were auto closed = $($AutoClosed)"
+	$IISAMessage += "#==============================================="
+	$IISAMessage += ""
+	#$IISAMessage += "#================================================"
+	#$IISAMessage += "# List of included Monitor/Rule names auto-closed"
+	#$IISAMessage += "#================================================"
+	#$IISAMessage += "# Monitors"
+	#$IISAMessage += $IISMonitorsToAutoClose | out-string
+	#$IISAMessage += "# Rules"
+	#$IISAMessage += $IISRulesToAutoClose | out-string
+	#$IISAMessage += "#============================================================"
+	#$IISAMessage += ""
+	}
+
+$IISAMessage
+
+$IISAMessage = $IISAMessage | out-string
+#============================================================
+
+
+  $Result = "GOOD"
+  $Message = "IIS Monitors auto-closed for ($date)"
+
+  $momapi.LogScriptEvent($ScriptName,$EventID,0,"`n# IIS Monitors auto-closed for ($date). `n `n$IISAMessage")
+
+#$bag.AddValue('Result',$Result)
+$bag.AddValue('Count',$Test)
+$bag.AddValue('Message',$Message)
+$bag.AddValue('Summary',$IISAMessage)
+
+
+# Return all bags
+$bag
+
+
+
+#
+# If Cleanup needed, array of report monitors
+
+# Reset Monitors Script
+# Put ps1 in mgmtpacks folder
+# https://sc.scomurr.com/scom-2012-monitor-reset-cleaning-up-the-environment/
+#	Download
+# https://gallery.technet.microsoft.com/SCOM-2012-Batch-reset-63a17534
+	
+#Alternate
+#https://gallery.technet.microsoft.com/scriptcenter/Auto-reset-script-for-d8b775ca
+
+
+
+
+if ( $SCOMCoreMonitorAlerts.Count -gt 0 )
+{
+foreach ($MonitorDisplayName in $SCOMCoreMonitorAlerts)
+	{
+	$Monitors = @(Get-SCOMMonitor -displayname $MonitorDisplayName)
+
+	# Set up monitor objects to reset
+	foreach ($Monitor in $Monitors)
+		{
+		$MonitorClass = Get-SCOMClass -Id $Monitor.Target.Id
+		$ActiveMonitors = Get-SCOMClassInstance -Class $MonitorClass | ? { ($_.healthstate -ne 'Success') -AND ( $_.healthstate -ne 'Uninitialized') -AND ($_.IsAvailable -eq $true) }
+		write-host "Found" + $ActiveMonitors.Count + "active monitors."
+		if ( $ActiveMonitors -ne $null)
+			{
+			foreach ($ActiveMonitor in $ActiveMonitors)
+				{
+				write-host " Resetting Health State on '" +$ActiveMonitor.FullName + "'" 
+				$ActiveMonitor.ResetMonitoringState($Monitor.ID)
+				}
+			}
+		}
+	}
+}
+
+$momapi.LogScriptEvent($ScriptName,$EventID,0,"IIS Monitors auto-close completed for ($date).")
+
+
+#
+# (Rules) Alerts to auto close after reset monitor
+# Resolve alerts after report built
+$SCOMCoreRuleAlerts | Resolve-SCOMAlert
+
+
+$momapi.LogScriptEvent($ScriptName,$EventID,0,"IIS alert rules resolved for ($date).")
+#=================================================================================
+# End MAIN script section
+ 
+  
+# End of script section
+#=================================================================================
+#Log an event for script ending and total execution time.
+$EndTime = Get-Date
+$ScriptTime = ($EndTime - $StartTime).TotalSeconds
+$momapi.LogScriptEvent($ScriptName,$EventID,0,"`n Script Completed. `n Script Runtime: ($ScriptTime) seconds.")
+#=================================================================================
+# End of script
+                </ScriptBody>
+                <TimeoutSeconds>$Config/TimeoutSeconds$</TimeoutSeconds>
+              </ProbeAction>
+            </MemberModules>
+            <Composition>
+              <Node ID="PA">
+                <Node ID="Scheduler" />
+              </Node>
+            </Composition>
+          </Composite>
+        </ModuleImplementation>
+        <OutputType>System!System.PropertyBagData</OutputType>
+      </DataSourceModuleType>
+      <DataSourceModuleType ID="Proactive.Microsoft.Windows.IIS2012.BaseEventProvider" Accessibility="Public" Batching="false">
+        <Configuration>
+          <IncludeSchemaTypes>
+            <SchemaType>Windows!Microsoft.Windows.ComputerNameSchema</SchemaType>
+          </IncludeSchemaTypes>
+          <xsd:element name="ComputerName" type="ComputerNameType" minOccurs="0" maxOccurs="1" xmlns:xsd="http://www.w3.org/2001/XMLSchema" />
+          <xsd:element name="LogName" type="xsd:string" xmlns:xsd="http://www.w3.org/2001/XMLSchema" />
+          <xsd:element name="AllowProxying" type="xsd:boolean" minOccurs="0" maxOccurs="1" xmlns:xsd="http://www.w3.org/2001/XMLSchema" />
+        </Configuration>
+        <ModuleImplementation Isolation="Any">
+          <Native>
+            <ClassID>B98BD20C-3CC8-4AFE-9F68-5702C74D73DB</ClassID>
+          </Native>
+        </ModuleImplementation>
+        <OutputType>Windows!Microsoft.Windows.EventData</OutputType>
+      </DataSourceModuleType>
+      <WriteActionModuleType ID="Proactive.DailyTasks.IIS2012Alerts.Close.Script.Alert.WA" Accessibility="Internal" Batching="false">
+        <Configuration>
+          <xsd:element minOccurs="1" name="TimeoutSeconds" type="xsd:integer" xmlns:xsd="http://www.w3.org/2001/XMLSchema" />
+        </Configuration>
+        <OverrideableParameters>
+          <OverrideableParameter ID="TimeoutSeconds" Selector="$Config/TimeoutSeconds$" ParameterType="int" />
+        </OverrideableParameters>
+        <ModuleImplementation Isolation="Any">
+          <Composite>
+            <MemberModules>
+              <WriteAction ID="PSWA" TypeID="Windows!Microsoft.Windows.PowerShellWriteAction">
+                <ScriptName>Proactive.DailyTasks.IIS2012Alerts.Close.Script.Alert.WA.v1003.ps1</ScriptName>
+                <ScriptBody>
+#=================================================================================
+#  Script to gather IIS2012 alerts and close via on demand task
+#
+#  Author: Kevin Justin
+#  v1.0
+#=================================================================================
+
+
+# Constants section - modify stuff here:
+#=================================================================================
+# Assign script name variable for use in event logging.  
+# ScriptName should be the same as the ID of the module that the script is contained in
+$ScriptName = "Proactive.DailyTasks.IIS2012Alerts.Close.Script.Alert.WA.v1003.ps1"
+$EventID = "581"
+#=================================================================================
+
+# Starting Script section - All scripts get this
+#=================================================================================
+# Gather the start time of the script
+$StartTime = Get-Date
+#Set variable to be used in logging events
+$whoami = whoami
+# Load MOMScript API
+$momapi = New-Object -comObject MOM.ScriptAPI
+#Log script event that we are starting task
+$momapi.LogScriptEvent($ScriptName,$EventID,0,"`n Script is starting. `n Running as ($whoami).")
+#=================================================================================
+
+
+# PropertyBag Script section - Monitoring scripts get this
+#=================================================================================
+# Load SCOM PropertyBag function
+$bag = $momapi.CreatePropertyBag()
+#=================================================================================
+
+
+# Begin MAIN script section
+#=================================================================================
+
+#For a simple example - get files in Windows Temp:
+$date = get-date -uFormat "%Y-%m-%d"
+
+# Grab past 24 hours
+if ( (get-date).DayOfWeek -ne "Monday" )
+	{
+	$Time = [DateTime](Get-Date).AddDays(-1)
+	}
+if ( (get-date).DayOfWeek -eq "Monday" )
+	{
+	$Time = [DateTime](Get-Date).AddDays(-3)
+	}
+	
+$momapi.LogScriptEvent($ScriptName,$EventID,0,"Gather IIS2012 Alerts for date ($date).")
+ 
+# Gather WINOS alerts
+## Grab the MP, get the Monitors and Rules from the MP, then grab all alerts found inside the Monitors/Rules
+$SCOMCoreMP = Get-SCOMManagementPack -DisplayName "Microsoft Windows Server 2016 and 1709+ Internet Information Services 10"
+$SCOMCoreRules = $SCOMCoreMP.GetRules()
+$SCOMCoreMonitors = $SCOMCoreMP.GetMonitors()
+
+$SCOMCoreReportAlerts = Get-SCOMAlert | ? { ($_.Name -in $SCOMCoreRules.DisplayName) -or ($_.Name -in $SCOMCoreMonitors.DisplayName) }
+$SCOMCoreReportAlerts.Count
+
+$SCOMOpenReportAlerts = $SCOMCoreReportAlerts | ? { ( $_.ResolutionState -ne "255" ) }
+$SCOMOpenReportAlerts.Count
+
+$SCOMCoreRuleAlerts = Get-SCOMAlert | ? { ( $_.Name -in $SCOMCoreRules.DisplayName) -AND ( $_.ResolutionState -ne "255" ) }
+$SCOMCoreRuleAlerts.Count
+
+$SCOMCoreMonitorAlerts = Get-SCOMAlert | ? { ($_.Name -in $SCOMCoreMonitors.DisplayName ) -AND ( $_.ResolutionState -ne "255" ) }
+$SCOMCoreMonitorAlerts.Count
+
+$AutoClosed = $SCOMCoreMonitorAlerts.Count + $SCOMCoreRuleAlerts.Count
+$Test = $SCOMCoreReportAlerts.Count
+
+
+$momapi.LogScriptEvent($ScriptName,$EventID,0,"IIS alerts gathered for ($date).")
+
+
+
+#
+# Build report
+#===================================
+$IISAMessage = @()
+
+if ($SCOMOpenReportAlerts.Count -eq 0 )
+	{
+	$Message = "ZERO IIS 2012 alerts for ($date)"
+	$IISAMessage += "ZERO IIS 2012 alerts for ($date)"
+	$momapi.LogScriptEvent($ScriptName,$EventID,0,"$Message")
+	}	
+
+
+if ($SCOMOpenReportAlerts.Count -gt 0 )
+	{
+	$IISAMessage += ""
+	$IISAMessage += "Alert Count = $($SCOMOpenReportAlerts.Count)"
+	$IISAMessage += ""
+	$IISAMessage += "# IIS Monitors auto-closed"
+	$IISAMessage += "#=========================================================="
+	$IISAMessage += "# Number of historical IIS 2012 alerts = $($SCOMCoreReportAlerts.Count)"
+	$IISAMessage += "# Number of OPEN IIS alert monitors AND rules = $($SCOMOpenReportAlerts.Count)"
+	$IISAMessage += "#=========================================================="
+	$IISAMessage += ""
+	$IISAMessage += "#==============================================="
+	$IISAMessage += "# Monitors AND Rules that were auto closed = $($AutoClosed)"
+	$IISAMessage += "#==============================================="
+	$IISAMessage += ""
+	#$IISAMessage += "#================================================"
+	#$IISAMessage += "# List of included Monitor/Rule names auto-closed"
+	#$IISAMessage += "#================================================"
+	#$IISAMessage += "# Monitors"
+	#$IISAMessage += $IISMonitorsToAutoClose | out-string
+	#$IISAMessage += "# Rules"
+	#$IISAMessage += $IISRulesToAutoClose | out-string
+	#$IISAMessage += "#============================================================"
+	#$IISAMessage += ""
+	}
+
+$IISAMessage
+
+$IISAMessage = $IISAMessage | out-string
+#============================================================
+
+
+  $Result = "GOOD"
+  $Message = "IIS Monitors auto-closed for ($date)"
+
+  $momapi.LogScriptEvent($ScriptName,$EventID,0,"`n# IIS Monitors auto-closed for ($date). `n `n$IISAMessage")
+
+#$bag.AddValue('Result',$Result)
+$bag.AddValue('Count',$Test)
+$bag.AddValue('Message',$Message)
+$bag.AddValue('Summary',$IISAMessage)
+
+
+# Return all bags
+$bag
+
+
+
+#
+# If Cleanup needed, array of report monitors
+
+# Reset Monitors Script
+# Put ps1 in mgmtpacks folder
+# https://sc.scomurr.com/scom-2012-monitor-reset-cleaning-up-the-environment/
+#	Download
+# https://gallery.technet.microsoft.com/SCOM-2012-Batch-reset-63a17534
+	
+#Alternate
+#https://gallery.technet.microsoft.com/scriptcenter/Auto-reset-script-for-d8b775ca
+
+
+
+
+if ( $SCOMCoreMonitorAlerts.Count -gt 0 )
+{
+foreach ($MonitorDisplayName in $SCOMCoreMonitorAlerts)
+	{
+	$Monitors = @(Get-SCOMMonitor -displayname $MonitorDisplayName)
+
+	# Set up monitor objects to reset
+	foreach ($Monitor in $Monitors)
+		{
+		$MonitorClass = Get-SCOMClass -Id $Monitor.Target.Id
+		$ActiveMonitors = Get-SCOMClassInstance -Class $MonitorClass | ? { ($_.healthstate -ne 'Success') -AND ( $_.healthstate -ne 'Uninitialized') -AND ($_.IsAvailable -eq $true) }
+		write-host "Found" + $ActiveMonitors.Count + "active monitors."
+		if ( $ActiveMonitors -ne $null)
+			{
+			foreach ($ActiveMonitor in $ActiveMonitors)
+				{
+				write-host " Resetting Health State on '" +$ActiveMonitor.FullName + "'" 
+				$ActiveMonitor.ResetMonitoringState($Monitor.ID)
+				}
+			}
+		}
+	}
+}
+
+$momapi.LogScriptEvent($ScriptName,$EventID,0,"IIS Monitors auto-close completed for ($date).")
+
+
+#
+# (Rules) Alerts to auto close after reset monitor
+# Resolve alerts after report built
+$SCOMCoreRuleAlerts | Resolve-SCOMAlert
+
+
+$momapi.LogScriptEvent($ScriptName,$EventID,0,"IIS alert rules resolved for ($date).")
+#=================================================================================
+# End MAIN script section
+ 
+  
+# End of script section
+#=================================================================================
+#Log an event for script ending and total execution time.
+$EndTime = Get-Date
+$ScriptTime = ($EndTime - $StartTime).TotalSeconds
+$momapi.LogScriptEvent($ScriptName,$EventID,0,"`n Script Completed. `n Script Runtime: ($ScriptTime) seconds.")
+#=================================================================================
+# End of script
+                </ScriptBody>
+                <TimeoutSeconds>$Config/TimeoutSeconds$</TimeoutSeconds>
+              </WriteAction>
+            </MemberModules>
+            <Composition>
+              <Node ID="PSWA" />
+            </Composition>
+          </Composite>
+        </ModuleImplementation>
+        <OutputType>System!System.BaseData</OutputType>
+        <InputType>System!System.BaseData</InputType>
+      </WriteActionModuleType>
+    </ModuleTypes>
+    <MonitorTypes>
+      <UnitMonitorType ID="Proactive.IIS2012.Repeated.Event.MonitorType" Accessibility="Public">
+        <MonitorTypeStates>
+          <MonitorTypeState ID="RepeatedEventRaised" NoDetection="false" />
+          <MonitorTypeState ID="TimerEventRaised" NoDetection="false" />
+        </MonitorTypeStates>
+        <Configuration>
+          <IncludeSchemaTypes>
+            <SchemaType>System!System.ExpressionEvaluatorSchema</SchemaType>
+          </IncludeSchemaTypes>
+          <xsd:element name="ComputerName" type="xsd:string" xmlns:xsd="http://www.w3.org/2001/XMLSchema" />
+          <xsd:element name="LogName" type="xsd:string" xmlns:xsd="http://www.w3.org/2001/XMLSchema" />
+          <xsd:element name="ErrorExpression" type="ExpressionType" xmlns:xsd="http://www.w3.org/2001/XMLSchema" />
+          <xsd:element name="AutoResolveInterval" type="xsd:unsignedInt" xmlns:xsd="http://www.w3.org/2001/XMLSchema" />
+          <xsd:element name="TimerWindowInSeconds" type="xsd:unsignedInt" xmlns:xsd="http://www.w3.org/2001/XMLSchema" />
+          <xsd:element name="RepeatCount" type="xsd:unsignedInt" xmlns:xsd="http://www.w3.org/2001/XMLSchema" />
+        </Configuration>
+        <MonitorImplementation>
+          <MemberModules>
+            <DataSource ID="ErrorDataSource" TypeID="Windows!Microsoft.Windows.BaseEventProvider">
+              <ComputerName>$Config/ComputerName$</ComputerName>
+              <LogName>$Config/LogName$</LogName>
+            </DataSource>
+            <ProbeAction ID="OnDemandReset" TypeID="System!System.PassThroughProbe" />
+            <ConditionDetection ID="ErrorFilterCondition" TypeID="System!System.ExpressionFilter">
+              <Expression>$Config/ErrorExpression$</Expression>
+            </ConditionDetection>
+            <ConditionDetection ID="RepeatedDataCondition" TypeID="System!System.ConsolidatorCondition">
+              <Consolidator>
+                <ConsolidationProperties />
+                <TimeControl>
+                  <WithinTimeSchedule>
+                    <Interval>$Config/TimerWindowInSeconds$</Interval>
+                  </WithinTimeSchedule>
+                </TimeControl>
+                <CountingCondition>
+                  <Count>$Config/RepeatCount$</Count>
+                  <CountMode>OnNewItemTestOutputRestart_OnTimerSlideByOne</CountMode>
+                </CountingCondition>
+              </Consolidator>
+            </ConditionDetection>
+            <ConditionDetection ID="TimerCondition" TypeID="System!System.TimerCondition">
+              <TimerWaitInSeconds>$Config/AutoResolveInterval$</TimerWaitInSeconds>
+            </ConditionDetection>
+          </MemberModules>
+          <RegularDetections>
+            <RegularDetection MonitorTypeStateID="RepeatedEventRaised">
+              <Node ID="RepeatedDataCondition">
+                <Node ID="ErrorFilterCondition">
+                  <Node ID="ErrorDataSource" />
+                </Node>
+              </Node>
+            </RegularDetection>
+            <RegularDetection MonitorTypeStateID="TimerEventRaised">
+              <Node ID="TimerCondition">
+                <Node ID="RepeatedDataCondition">
+                  <Node ID="ErrorFilterCondition">
+                    <Node ID="ErrorDataSource" />
+                  </Node>
+                </Node>
+              </Node>
+            </RegularDetection>
+          </RegularDetections>
+          <OnDemandDetections>
+            <OnDemandDetection MonitorTypeStateID="TimerEventRaised">
+              <Node ID="OnDemandReset" />
+            </OnDemandDetection>
+          </OnDemandDetections>
+        </MonitorImplementation>
+      </UnitMonitorType>
+      <UnitMonitorType ID="Proactive.Microsoft.Windows.IIS2012.SingleEventLogTimer2StateMonitorType" Accessibility="Public">
+        <MonitorTypeStates>
+          <MonitorTypeState ID="EventRaised" NoDetection="false" />
+          <MonitorTypeState ID="TimerEventRaised" NoDetection="false" />
+        </MonitorTypeStates>
+        <Configuration>
+          <IncludeSchemaTypes>
+            <SchemaType>System!System.ExpressionEvaluatorSchema</SchemaType>
+          </IncludeSchemaTypes>
+          <xsd:element name="ComputerName" type="xsd:string" xmlns:xsd="http://www.w3.org/2001/XMLSchema" />
+          <xsd:element name="LogName" type="xsd:string" xmlns:xsd="http://www.w3.org/2001/XMLSchema" />
+          <xsd:element name="Expression" type="ExpressionType" xmlns:xsd="http://www.w3.org/2001/XMLSchema" />
+          <xsd:element name="TimerWaitInSeconds" type="xsd:integer" xmlns:xsd="http://www.w3.org/2001/XMLSchema" />
+          <xsd:element name="MatchCount" type="xsd:integer" xmlns:xsd="http://www.w3.org/2001/XMLSchema" />
+        </Configuration>
+        <OverrideableParameters>
+          <OverrideableParameter ID="MatchCount" Selector="$Config/MatchCount$" ParameterType="int" />
+        </OverrideableParameters>
+        <MonitorImplementation>
+          <MemberModules>
+            <DataSource ID="DataSource" TypeID="Windows!Microsoft.Windows.BaseEventProvider">
+              <ComputerName>$Config/ComputerName$</ComputerName>
+              <LogName>$Config/LogName$</LogName>
+            </DataSource>
+            <ProbeAction ID="OnDemandReset" TypeID="System!System.PassThroughProbe" />
+            <ConditionDetection ID="FilterCondition" TypeID="System!System.ExpressionFilter">
+              <Expression>$Config/Expression$</Expression>
+            </ConditionDetection>
+            <ConditionDetection ID="TimerCondition" TypeID="System!System.TimerCondition">
+              <TimerWaitInSeconds>$Config/TimerWaitInSeconds$</TimerWaitInSeconds>
+            </ConditionDetection>
+            <ConditionDetection ID="ThresholdNotBreached" TypeID="System!System.LogicalSet.ExpressionFilter">
+              <Expression>
+                <SimpleExpression>
+                  <ValueExpression>
+                    <XPathQuery Type="Double">Value</XPathQuery>
+                  </ValueExpression>
+                  <Operator>LessEqual</Operator>
+                  <ValueExpression>
+                    <Value Type="Double">$Config/MatchCount$</Value>
+                  </ValueExpression>
+                </SimpleExpression>
+              </Expression>
+              <EmptySet>Block</EmptySet>
+              <SetEvaluation>Any</SetEvaluation>
+            </ConditionDetection>
+            <ConditionDetection ID="ThresholdBreached" TypeID="System!System.LogicalSet.ExpressionFilter">
+              <Expression>
+                <SimpleExpression>
+                  <ValueExpression>
+                    <XPathQuery Type="Double">Value</XPathQuery>
+                  </ValueExpression>
+                  <Operator>Greater</Operator>
+                  <ValueExpression>
+                    <Value Type="Double">$Config/MatchCount$</Value>
+                  </ValueExpression>
+                </SimpleExpression>
+              </Expression>
+              <EmptySet>Passthrough</EmptySet>
+              <SetEvaluation>Any</SetEvaluation>
+            </ConditionDetection>
+          </MemberModules>
+          <RegularDetections>
+            <RegularDetection MonitorTypeStateID="EventRaised">
+              <Node ID="FilterCondition">
+                <Node ID="DataSource" />
+              </Node>
+            </RegularDetection>
+            <RegularDetection MonitorTypeStateID="TimerEventRaised">
+              <Node ID="TimerCondition">
+                <Node ID="FilterCondition">
+                  <Node ID="DataSource" />
+                </Node>
+              </Node>
+            </RegularDetection>
+          </RegularDetections>
+          <OnDemandDetections>
+            <OnDemandDetection MonitorTypeStateID="TimerEventRaised">
+              <Node ID="OnDemandReset" />
+            </OnDemandDetection>
+          </OnDemandDetections>
+        </MonitorImplementation>
+      </UnitMonitorType>
+    </MonitorTypes>
+  </TypeDefinitions>
+  <Monitoring>
+    <Discoveries>
+      <Discovery ID="Microsoft.Windows.Internet.Information.Services.2012.Enabled.Group.Discovery" Enabled="true" Target="Microsoft.Windows.Internet.Information.Services.2012.Enabled.Group" ConfirmDelivery="false" Remotable="true" Priority="Normal">
+        <Category>Discovery</Category>
+        <DiscoveryTypes>
+          <DiscoveryRelationship TypeID="MSIGL!Microsoft.SystemCenter.InstanceGroupContainsEntities" />
+        </DiscoveryTypes>
+        <DataSource ID="GroupPopulationDataSource" TypeID="SC!Microsoft.SystemCenter.GroupPopulator">
+          <RuleId>$MPElement$</RuleId>
+          <GroupInstanceId>$MPElement[Name="Microsoft.Windows.Internet.Information.Services.2012.Enabled.Group"]$</GroupInstanceId>
+          <MembershipRules>
+            <MembershipRule>
+              <MonitoringClass>$MPElement[Name="Windows!Microsoft.Windows.Computer"]$</MonitoringClass>
+              <RelationshipClass>$MPElement[Name="MSIGL!Microsoft.SystemCenter.InstanceGroupContainsEntities"]$</RelationshipClass>
+              <Expression>
+                <RegExExpression>
+                  <ValueExpression>
+                    <Property>$MPElement[Name="Windows!Microsoft.Windows.Computer"]/PrincipalName$</Property>
+                  </ValueExpression>
+                  <Operator>MatchesRegularExpression</Operator>
+                  <Pattern>(?i)sweb|AA|FF|MM|SMTP|SPPUB</Pattern>
+                </RegExExpression>
+              </Expression>
+            </MembershipRule>
+          </MembershipRules>
+        </DataSource>
+      </Discovery>
+    </Discoveries>
+    <Rules>
+      <Rule ID="Proactive.DailyTasks.IIS2012Alerts.Report.Script.Alert.Rule" Enabled="true" Target="SC!Microsoft.SystemCenter.AllManagementServersPool" ConfirmDelivery="true" Remotable="true" Priority="Normal" DiscardLevel="100">
+        <Category>Alert</Category>
+        <DataSources>
+          <DataSource ID="DS" TypeID="Proactive.DailyTasks.IIS2012Alerts.Close.Script.DataSource">
+            <TimeoutSeconds>900</TimeoutSeconds>
+          </DataSource>
+        </DataSources>
+        <WriteActions>
+          <WriteAction ID="WA" TypeID="Health!System.Health.GenerateAlert">
+            <Priority>1</Priority>
+            <Severity>0</Severity>
+            <AlertMessageId>$MPElement[Name="Proactive.DailyTasks.IIS2012Alerts.Report.Script.Alert.Rule.AlertMessage"]$</AlertMessageId>
+            <AlertParameters>
+              <AlertParameter1>$Data/Property[@Name='Count']$</AlertParameter1>
+              <AlertParameter2>$Data/Property[@Name='Message']$</AlertParameter2>
+              <AlertParameter3>$Data/Property[@Name='Summary']$</AlertParameter3>
+            </AlertParameters>
+            <Suppression>
+              <SuppressionValue>$Data/Property[@Name='Message']$</SuppressionValue>
+            </Suppression>
+          </WriteAction>
+        </WriteActions>
+      </Rule>
+      <Rule ID="Proactive.DailyTasks.IIS2012Alerts.Report.Script.Task.Alert.Rule" Enabled="true" Target="SC!Microsoft.SystemCenter.AllManagementServersPool" ConfirmDelivery="true" Remotable="true" Priority="Normal" DiscardLevel="100">
+        <Category>Alert</Category>
+        <DataSources>
+          <DataSource ID="DS" TypeID="Windows!Microsoft.Windows.EventProvider">
+            <LogName>Operations Manager</LogName>
+            <Expression>
+              <And>
+                <Expression>
+                  <SimpleExpression>
+                    <ValueExpression>
+                      <XPathQuery Type="UnsignedInteger">EventDisplayNumber</XPathQuery>
+                    </ValueExpression>
+                    <Operator>Equal</Operator>
+                    <ValueExpression>
+                      <Value Type="UnsignedInteger">581</Value>
+                    </ValueExpression>
+                  </SimpleExpression>
+                </Expression>
+                <Expression>
+                  <SimpleExpression>
+                    <ValueExpression>
+                      <XPathQuery Type="String">PublisherName</XPathQuery>
+                    </ValueExpression>
+                    <Operator>Equal</Operator>
+                    <ValueExpression>
+                      <Value Type="String">Health Service Script</Value>
+                    </ValueExpression>
+                  </SimpleExpression>
+                </Expression>
+                <Expression>
+                  <RegExExpression>
+                    <ValueExpression>
+                      <XPathQuery Type="String">EventDescription</XPathQuery>
+                    </ValueExpression>
+                    <Operator>ContainsSubstring</Operator>
+                    <Pattern>IIS2012 Monitors auto-closed for </Pattern>
+                  </RegExExpression>
+                </Expression>
+              </And>
+            </Expression>
+          </DataSource>
+        </DataSources>
+        <WriteActions>
+          <WriteAction ID="Alert" TypeID="Health!System.Health.GenerateAlert">
+            <Priority>1</Priority>
+            <Severity>0</Severity>
+            <AlertName />
+            <AlertDescription />
+            <AlertOwner />
+            <AlertMessageId>$MPElement[Name="Proactive.DailyTasks.IIS2012Alerts.Report.Script.Task.Rule.AlertMessage"]$</AlertMessageId>
+            <AlertParameters>
+              <AlertParameter1>$Data/EventDescription$</AlertParameter1>
+            </AlertParameters>
+            <Suppression />
+          </WriteAction>
+        </WriteActions>
+      </Rule>
+    </Rules>
+    <Tasks>
+      <Task ID="Proactive.DailyTasks.IIS2012Alerts.Report.Script.Task" Accessibility="Public" Enabled="true" Target="SC!Microsoft.SystemCenter.AllManagementServersPool" Timeout="120" Remotable="true">
+        <Category>Custom</Category>
+        <WriteAction ID="PSWA" TypeID="Proactive.DailyTasks.IIS2012Alerts.Close.Script.Alert.WA">
+          <TimeoutSeconds>900</TimeoutSeconds>
+        </WriteAction>
+      </Task>
+    </Tasks>
+    <Overrides>
+      <DiscoveryPropertyOverride ID="Override.Microsoft.Windows.InternetInformationServices.8.2012.ServerRole.Discovery" Context="MWSL!Microsoft.Windows.Server.6.2.Computer" Enforced="false" Discovery="MWIIS2!Microsoft.Windows.InternetInformationServices.6.2.ServerRole.Discovery.Rule" Property="Enabled">
+        <Value>false</Value>
+      </DiscoveryPropertyOverride>
+      <RulePropertyOverride ID="Override.Microsoft.Windows.InternetInformationServices.6.2.FTPServer.FTPServiceCurrentConnections.Collection" Context="MWIIS2!Microsoft.Windows.InternetInformationServices.6.2.FTPServer" Enforced="false" Rule="MWIIS2!Microsoft.Windows.InternetInformationServices.6.2.FTPServer.FTPServiceCurrentConnections.Collection" Property="Enabled">
+        <Value>false</Value>
+      </RulePropertyOverride>
+      <RulePropertyOverride ID="OverrideForRuleMicrosoftWindowsInternetInformationServices62FTPServerFTPServiceBytesTotalSecCollectionForContextMicrosoftWindowsInternetInformationServices62FTPServere80ab9ad787e48cc9dbfd5bcc36ec1c1" Context="MWIIS2!Microsoft.Windows.InternetInformationServices.6.2.FTPServer" Enforced="false" Rule="MWIIS2!Microsoft.Windows.InternetInformationServices.6.2.FTPServer.FTPServiceBytesTotalSec.Collection" Property="Enabled">
+        <Value>false</Value>
+      </RulePropertyOverride>
+      <RulePropertyOverride ID="OverrideForRuleMicrosoftWindowsInternetInformationServices62WebServerWebServiceBytesTotalSecCollectionForContextMicrosoftWindowsInternetInformationServices62WebServer2501228dc846476fa5bc82a142634ac4" Context="MWIIS2!Microsoft.Windows.InternetInformationServices.6.2.WebServer" Enforced="false" Rule="MWIIS2!Microsoft.Windows.InternetInformationServices.6.2.WebServer.WebServiceBytesTotalSec.Collection" Property="Enabled">
+        <Value>false</Value>
+      </RulePropertyOverride>
+      <RulePropertyOverride ID="OverrideForRuleMicrosoftWindowsInternetInformationServices62WebServerWebServiceBytesReceivedSecCollectionForContextMicrosoftWindowsInternetInformationServices62WebServer7ec4c8818ae04e74ab6563382857de29" Context="MWIIS2!Microsoft.Windows.InternetInformationServices.6.2.WebServer" Enforced="false" Rule="MWIIS2!Microsoft.Windows.InternetInformationServices.6.2.WebServer.WebServiceBytesReceivedSec.Collection" Property="Enabled">
+        <Value>false</Value>
+      </RulePropertyOverride>
+      <RulePropertyOverride ID="OverrideForRuleMicrosoftWindowsInternetInformationServices62WebServerWebServiceConnectionAttemptsPerSecondForContextMicrosoftWindowsInternetInformationServices62WebServer30af5792777140f3b7db10aa6ba6af22" Context="MWIIS2!Microsoft.Windows.InternetInformationServices.6.2.WebServer" Enforced="false" Rule="MWIIS2!Microsoft.Windows.InternetInformationServices.6.2.WebServer.WebServiceConnectionAttemptsPerSecond" Property="Enabled">
+        <Value>false</Value>
+      </RulePropertyOverride>
+      <RulePropertyOverride ID="OverrideForRuleMicrosoftWindowsInternetInformationServices62WebServerWebServiceCurrentConnectionsCollectionForContextMicrosoftWindowsInternetInformationServices62WebServercf17b27cd0a644bcaad8574c708ee5e6" Context="MWIIS2!Microsoft.Windows.InternetInformationServices.6.2.WebServer" Enforced="false" Rule="MWIIS2!Microsoft.Windows.InternetInformationServices.6.2.WebServer.WebServiceCurrentConnections.Collection" Property="Enabled">
+        <Value>false</Value>
+      </RulePropertyOverride>
+      <RulePropertyOverride ID="OverrideForRuleMicrosoftWindowsInternetInformationServices62WebServerWebServiceBytesSentSecCollectionForContextMicrosoftWindowsInternetInformationServices62WebServerd305093d96d3404aa433b55ffd01f83a" Context="MWIIS2!Microsoft.Windows.InternetInformationServices.6.2.WebServer" Enforced="false" Rule="MWIIS2!Microsoft.Windows.InternetInformationServices.6.2.WebServer.WebServiceBytesSentSec.Collection" Property="Enabled">
+        <Value>false</Value>
+      </RulePropertyOverride>
+      <RulePropertyOverride ID="OverrideForRuleMicrosoftWindowsInternetInformationServices62WebServerWebServiceTotalMethodRequestsPerSecondsForContextMicrosoftWindowsInternetInformationServices62WebServerf8ca8ff3cd3a481d9c9c23ee1048782a" Context="MWIIS2!Microsoft.Windows.InternetInformationServices.6.2.WebServer" Enforced="false" Rule="MWIIS2!Microsoft.Windows.InternetInformationServices.6.2.WebServer.WebServiceTotalMethodRequestsPerSeconds" Property="Enabled">
+        <Value>false</Value>
+      </RulePropertyOverride>
+      <RulePropertyOverride ID="OverrideForRuleMicrosoftWindowsInternetInformationServices62LegacySMTPServerSMTPServerBytesReceivedSecCollectionForContextMicrosoftWindowsInternetInformationServices62LegacySMTPServera14a2a9eb3db438983a779e7a388a26b" Context="MWIIS2!Microsoft.Windows.InternetInformationServices.6.2.LegacySMTPServer" Enforced="false" Rule="MWIIS2!Microsoft.Windows.InternetInformationServices.6.2.LegacySMTPServer.SMTPServerBytesReceivedSec.Collection" Property="Enabled">
+        <Value>false</Value>
+      </RulePropertyOverride>
+      <RulePropertyOverride ID="OverrideForRuleMicrosoftWindowsInternetInformationServices62LegacySMTPServerSMTPServerInboundConnectionsCurrentCollectionForContextMicrosoftWindowsInternetInformationServices62LegacySMTPServer368d56c7ad1b498f8013232f603f8c78" Context="MWIIS2!Microsoft.Windows.InternetInformationServices.6.2.LegacySMTPServer" Enforced="false" Rule="MWIIS2!Microsoft.Windows.InternetInformationServices.6.2.LegacySMTPServer.SMTPServerInboundConnectionsCurrent.Collection" Property="Enabled">
+        <Value>false</Value>
+      </RulePropertyOverride>
+      <RulePropertyOverride ID="OverrideForRuleMicrosoftWindowsInternetInformationServices62LegacySMTPServerSMTPServerMessageBytesReceivedSecCollectionForContextMicrosoftWindowsInternetInformationServices62LegacySMTPServer77d2130fd74049d3b6127a0e62d5a5bd" Context="MWIIS2!Microsoft.Windows.InternetInformationServices.6.2.LegacySMTPServer" Enforced="false" Rule="MWIIS2!Microsoft.Windows.InternetInformationServices.6.2.LegacySMTPServer.SMTPServerMessageBytesReceivedSec.Collection" Property="Enabled">
+        <Value>false</Value>
+      </RulePropertyOverride>
+      <RulePropertyOverride ID="OverrideForRuleMicrosoftWindowsInternetInformationServices62LegacySMTPServerSMTPServerOutboundConnectionsCurrentCollectionForContextMicrosoftWindowsInternetInformationServices62LegacySMTPServer130170ec0d3e41b694f315b6f7f99978" Context="MWIIS2!Microsoft.Windows.InternetInformationServices.6.2.LegacySMTPServer" Enforced="false" Rule="MWIIS2!Microsoft.Windows.InternetInformationServices.6.2.LegacySMTPServer.SMTPServerOutboundConnectionsCurrent.Collection" Property="Enabled">
+        <Value>false</Value>
+      </RulePropertyOverride>
+      <RulePropertyOverride ID="OverrideForRuleMicrosoftWindowsInternetInformationServices62LegacySMTPServerSMTPServerMessagesDeliveredSecCollectionForContextMicrosoftWindowsInternetInformationServices62LegacySMTPServer8cdf629f70bd415793415d8f42fe2aa6" Context="MWIIS2!Microsoft.Windows.InternetInformationServices.6.2.LegacySMTPServer" Enforced="false" Rule="MWIIS2!Microsoft.Windows.InternetInformationServices.6.2.LegacySMTPServer.SMTPServerMessagesDeliveredSec.Collection" Property="Enabled">
+        <Value>false</Value>
+      </RulePropertyOverride>
+      <RulePropertyOverride ID="OverrideForRuleMicrosoftWindowsInternetInformationServices62LegacySMTPServerSMTPServerMessagesSentSecCollectionForContextMicrosoftWindowsInternetInformationServices62LegacySMTPServer13c4bf0a5dba4289ae1ea08cd5d44a48" Context="MWIIS2!Microsoft.Windows.InternetInformationServices.6.2.LegacySMTPServer" Enforced="false" Rule="MWIIS2!Microsoft.Windows.InternetInformationServices.6.2.LegacySMTPServer.SMTPServerMessagesSentSec.Collection" Property="Enabled">
+        <Value>false</Value>
+      </RulePropertyOverride>
+      <RulePropertyOverride ID="OverrideForRuleMicrosoftWindowsInternetInformationServices62LegacySMTPServerSMTPServerBytesTotalSecCollectionForContextMicrosoftWindowsInternetInformationServices62LegacySMTPServer68ad754ce7b14a0eb013856321890f09" Context="MWIIS2!Microsoft.Windows.InternetInformationServices.6.2.LegacySMTPServer" Enforced="false" Rule="MWIIS2!Microsoft.Windows.InternetInformationServices.6.2.LegacySMTPServer.SMTPServerBytesTotalSec.Collection" Property="Enabled">
+        <Value>false</Value>
+      </RulePropertyOverride>
+      <RulePropertyOverride ID="OverrideForRuleMicrosoftWindowsInternetInformationServices62LegacySMTPServerSMTPServerTotalmessagessubmittedCollectionForContextMicrosoftWindowsInternetInformationServices62LegacySMTPServer035fb13c54274258b7d97b353247f074" Context="MWIIS2!Microsoft.Windows.InternetInformationServices.6.2.LegacySMTPServer" Enforced="false" Rule="MWIIS2!Microsoft.Windows.InternetInformationServices.6.2.LegacySMTPServer.SMTPServerTotalmessagessubmitted.Collection" Property="Enabled">
+        <Value>false</Value>
+      </RulePropertyOverride>
+      <RulePropertyOverride ID="OverrideForRuleMicrosoftWindowsInternetInformationServices62LegacySMTPServerSMTPServerMessageBytesSentSecCollectionForContextMicrosoftWindowsInternetInformationServices62LegacySMTPServer46a6394ff18643f3976d8d13549ea043" Context="MWIIS2!Microsoft.Windows.InternetInformationServices.6.2.LegacySMTPServer" Enforced="false" Rule="MWIIS2!Microsoft.Windows.InternetInformationServices.6.2.LegacySMTPServer.SMTPServerMessageBytesSentSec.Collection" Property="Enabled">
+        <Value>false</Value>
+      </RulePropertyOverride>
+      <RulePropertyOverride ID="OverrideForRuleMicrosoftWindowsInternetInformationServices62LegacySMTPServerSMTPServerBytesSentSecCollectionForContextMicrosoftWindowsInternetInformationServices62LegacySMTPServer22ce5f2d3416449697f02825f6b61992" Context="MWIIS2!Microsoft.Windows.InternetInformationServices.6.2.LegacySMTPServer" Enforced="false" Rule="MWIIS2!Microsoft.Windows.InternetInformationServices.6.2.LegacySMTPServer.SMTPServerBytesSentSec.Collection" Property="Enabled">
+        <Value>false</Value>
+      </RulePropertyOverride>
+      <RulePropertyOverride ID="OverrideForRuleMicrosoftWindowsInternetInformationServices62LegacySMTPServerSMTPServerMessagesReceivedSecCollectionForContextMicrosoftWindowsInternetInformationServices62LegacySMTPServer9534d8e9d84c4c9d8e585ca5e04a3233" Context="MWIIS2!Microsoft.Windows.InternetInformationServices.6.2.LegacySMTPServer" Enforced="false" Rule="MWIIS2!Microsoft.Windows.InternetInformationServices.6.2.LegacySMTPServer.SMTPServerMessagesReceivedSec.Collection" Property="Enabled">
+        <Value>false</Value>
+      </RulePropertyOverride>
+      <RulePropertyOverride ID="OverrideForRuleMicrosoftWindowsInternetInformationServices62LegacySMTPVirtualServerSMTPVirtualServerBytesReceivedSecCollectionForContextMicrosoftWindowsInternetInformationServices62LegacySMTPVirtualServer2f5e257e0d5846bb8ff27c499da556e" Context="MWIIS2!Microsoft.Windows.InternetInformationServices.6.2.LegacySMTPVirtualServer" Enforced="false" Rule="MWIIS2!Microsoft.Windows.InternetInformationServices.6.2.LegacySMTPVirtualServer.SMTPVirtualServerBytesReceivedSec.Collection" Property="Enabled">
+        <Value>false</Value>
+      </RulePropertyOverride>
+      <RulePropertyOverride ID="OverrideForRuleMicrosoftWindowsInternetInformationServices62LegacySMTPVirtualServerSMTPVirtualServerTotalmessagessubmittedCollectionForContextMicrosoftWindowsInternetInformationServices62LegacySMTPVirtualServer26ce7ac583bc4447b548fd041" Context="MWIIS2!Microsoft.Windows.InternetInformationServices.6.2.LegacySMTPVirtualServer" Enforced="false" Rule="MWIIS2!Microsoft.Windows.InternetInformationServices.6.2.LegacySMTPVirtualServer.SMTPVirtualServerTotalmessagessubmitted.Collection" Property="Enabled">
+        <Value>false</Value>
+      </RulePropertyOverride>
+      <RulePropertyOverride ID="OverrideForRuleMicrosoftWindowsInternetInformationServices62LegacySMTPVirtualServerSMTPVirtualServerMessagesDeliveredSecCollectionForContextMicrosoftWindowsInternetInformationServices62LegacySMTPVirtualServer6943b6138461488590b5d5383ce" Context="MWIIS2!Microsoft.Windows.InternetInformationServices.6.2.LegacySMTPVirtualServer" Enforced="false" Rule="MWIIS2!Microsoft.Windows.InternetInformationServices.6.2.LegacySMTPVirtualServer.SMTPVirtualServerMessagesDeliveredSec.Collection" Property="Enabled">
+        <Value>false</Value>
+      </RulePropertyOverride>
+      <RulePropertyOverride ID="OverrideForRuleMicrosoftWindowsInternetInformationServices62LegacySMTPVirtualServerSMTPVirtualServerOutboundConnectionsCurrentCollectionForContextMicrosoftWindowsInternetInformationServices62LegacySMTPVirtualServerd0ee0e77052d4d68bd475" Context="MWIIS2!Microsoft.Windows.InternetInformationServices.6.2.LegacySMTPVirtualServer" Enforced="false" Rule="MWIIS2!Microsoft.Windows.InternetInformationServices.6.2.LegacySMTPVirtualServer.SMTPVirtualServerOutboundConnectionsCurrent.Collection" Property="Enabled">
+        <Value>false</Value>
+      </RulePropertyOverride>
+      <RulePropertyOverride ID="OverrideForRuleMicrosoftWindowsInternetInformationServices62LegacySMTPVirtualServerSMTPVirtualServerMessagesReceivedSecCollectionForContextMicrosoftWindowsInternetInformationServices62LegacySMTPVirtualServerb14c00b42f2241bf8c7201b07cb7" Context="MWIIS2!Microsoft.Windows.InternetInformationServices.6.2.LegacySMTPVirtualServer" Enforced="false" Rule="MWIIS2!Microsoft.Windows.InternetInformationServices.6.2.LegacySMTPVirtualServer.SMTPVirtualServerMessagesReceivedSec.Collection" Property="Enabled">
+        <Value>false</Value>
+      </RulePropertyOverride>
+      <RulePropertyOverride ID="OverrideForRuleMicrosoftWindowsInternetInformationServices62LegacySMTPVirtualServerSMTPVirtualServerInboundConnectionsCurrentCollectionForContextMicrosoftWindowsInternetInformationServices62LegacySMTPVirtualServerbb6fe6af05bf4d17ad1d64" Context="MWIIS2!Microsoft.Windows.InternetInformationServices.6.2.LegacySMTPVirtualServer" Enforced="false" Rule="MWIIS2!Microsoft.Windows.InternetInformationServices.6.2.LegacySMTPVirtualServer.SMTPVirtualServerInboundConnectionsCurrent.Collection" Property="Enabled">
+        <Value>false</Value>
+      </RulePropertyOverride>
+      <RulePropertyOverride ID="OverrideForRuleMicrosoftWindowsInternetInformationServices62LegacySMTPVirtualServerSMTPVirtualServerBytesTotalSecCollectionForContextMicrosoftWindowsInternetInformationServices62LegacySMTPVirtualServer390f976b579e41208b83124e1d347aa5" Context="MWIIS2!Microsoft.Windows.InternetInformationServices.6.2.LegacySMTPVirtualServer" Enforced="false" Rule="MWIIS2!Microsoft.Windows.InternetInformationServices.6.2.LegacySMTPVirtualServer.SMTPVirtualServerBytesTotalSec.Collection" Property="Enabled">
+        <Value>false</Value>
+      </RulePropertyOverride>
+      <RulePropertyOverride ID="OverrideForRuleMicrosoftWindowsInternetInformationServices62LegacySMTPVirtualServerSMTPVirtualServerMessagesSentSecCollectionForContextMicrosoftWindowsInternetInformationServices62LegacySMTPVirtualServer00f268d595754653bda1197da78d312c" Context="MWIIS2!Microsoft.Windows.InternetInformationServices.6.2.LegacySMTPVirtualServer" Enforced="false" Rule="MWIIS2!Microsoft.Windows.InternetInformationServices.6.2.LegacySMTPVirtualServer.SMTPVirtualServerMessagesSentSec.Collection" Property="Enabled">
+        <Value>false</Value>
+      </RulePropertyOverride>
+      <RulePropertyOverride ID="OverrideForRuleMicrosoftWindowsInternetInformationServices62LegacySMTPVirtualServerSMTPVirtualServerMessageBytesReceivedSecCollectionForContextMicrosoftWindowsInternetInformationServices62LegacySMTPVirtualServerf1d3d991deb3435cb93d9e1a" Context="MWIIS2!Microsoft.Windows.InternetInformationServices.6.2.LegacySMTPVirtualServer" Enforced="false" Rule="MWIIS2!Microsoft.Windows.InternetInformationServices.6.2.LegacySMTPVirtualServer.SMTPVirtualServerMessageBytesReceivedSec.Collection" Property="Enabled">
+        <Value>false</Value>
+      </RulePropertyOverride>
+      <RulePropertyOverride ID="OverrideForRuleMicrosoftWindowsInternetInformationServices62LegacySMTPVirtualServerSMTPVirtualServerBytesSentSecCollectionForContextMicrosoftWindowsInternetInformationServices62LegacySMTPVirtualServerca0d2f39e08d47a7b70146736dab88d1" Context="MWIIS2!Microsoft.Windows.InternetInformationServices.6.2.LegacySMTPVirtualServer" Enforced="false" Rule="MWIIS2!Microsoft.Windows.InternetInformationServices.6.2.LegacySMTPVirtualServer.SMTPVirtualServerBytesSentSec.Collection" Property="Enabled">
+        <Value>false</Value>
+      </RulePropertyOverride>
+      <RulePropertyOverride ID="OverrideForRuleMicrosoftWindowsInternetInformationServices62LegacySMTPVirtualServerSMTPVirtualServerMessageBytesSentSecCollectionForContextMicrosoftWindowsInternetInformationServices62LegacySMTPVirtualServer2c1a8be73179422b81972dd83a8d" Context="MWIIS2!Microsoft.Windows.InternetInformationServices.6.2.LegacySMTPVirtualServer" Enforced="false" Rule="MWIIS2!Microsoft.Windows.InternetInformationServices.6.2.LegacySMTPVirtualServer.SMTPVirtualServerMessageBytesSentSec.Collection" Property="Enabled">
+        <Value>false</Value>
+      </RulePropertyOverride>
+    </Overrides>
+  </Monitoring>
+  <Presentation>
+    <StringResources>
+      <StringResource ID="Proactive.DailyTasks.IIS2012Alerts.Report.Script.Alert.Rule.AlertMessage" />
+      <StringResource ID="Proactive.DailyTasks.IIS2012Alerts.Report.Script.Task.Rule.AlertMessage" />
+    </StringResources>
+  </Presentation>
+  <LanguagePacks>
+    <LanguagePack ID="ENU" IsDefault="false">
+      <DisplayStrings>
+        <DisplayString ElementID="Microsoft.Windows.Internet.Information.Services.2012.Addendum">
+          <Name>Microsoft Windows Internet Information Services 2012 Addendum</Name>
+          <Description>
+v1.0.0.3 18 Jul 2023 Updated reports to informational
+v1.0.0.1 19 Jan 2023 Updates for Get method, daily reports/closure automation
+v1.0.0.0  2 Aug 2022 Initial pack with automated closure, reports, OFF/ON logic for IIS</Description>
+        </DisplayString>
+        <DisplayString ElementID="Microsoft.Windows.Internet.Information.Services.2012.Enabled.Group">
+          <Name>Microsoft Windows Internet Information Services IIS 2012 Enabled Servers</Name>
+          <Description>Microsoft Windows Internet Information Services IIS 2012 Enabled Servers</Description>
+        </DisplayString>
+        <DisplayString ElementID="Proactive.DailyTasks.IIS2012Alerts.Close.Script.DataSource">
+          <Name>Proactive DailyTasks IIS2012Alerts report and auto-close DataSource</Name>
+          <Description>This datasource generates IIS2012 Alerts report and auto-close DataSource</Description>
+        </DisplayString>
+        <DisplayString ElementID="Proactive.Microsoft.Windows.IIS2012.BaseEventProvider">
+          <Name>Proactive Microsoft Windows IIS2012 BaseEventProvider DataSource</Name>
+          <Description>This datasource updates IIS2012 base event provider with more options</Description>
+        </DisplayString>
+        <DisplayString ElementID="Proactive.DailyTasks.IIS2012Alerts.Close.Script.Alert.WA">
+          <Name>Proactive DailyTasks IIS2012Alerts report and auto-close on-demand task</Name>
+          <Description>This write-action task generates IIS2012Alerts report and auto-close DataSource</Description>
+        </DisplayString>
+        <DisplayString ElementID="Proactive.IIS2012.Repeated.Event.MonitorType">
+          <Name>Proactive IIS Repeated Event MonitorType</Name>
+        </DisplayString>
+        <DisplayString ElementID="Proactive.Microsoft.Windows.IIS2012.SingleEventLogTimer2StateMonitorType">
+          <Name>Proactive Microsoft Windows IIS2012 Single Event log with Timer and Matchcount MonitorType</Name>
+        </DisplayString>
+        <DisplayString ElementID="Microsoft.Windows.Internet.Information.Services.2012.Enabled.Group.Discovery">
+          <Name>Populate Microsoft Windows Internet Information Services IIS 2012 Enabled Servers</Name>
+          <Description>This discovery rule populates the group 'Microsoft Windows Internet Information Services IIS 2012 Enabled Servers'</Description>
+        </DisplayString>
+        <DisplayString ElementID="Proactive.DailyTasks.IIS2012Alerts.Report.Script.Alert.Rule">
+          <Name>Proactive DailyTasks IIS2012Alerts Report Script Alert Rule</Name>
+          <Description>Proactive Scheduled rule to kick off datasource at 0614 M-F</Description>
+        </DisplayString>
+        <DisplayString ElementID="Proactive.DailyTasks.IIS2012Alerts.Report.Script.Alert.Rule.AlertMessage">
+          <Name>Proactive DailyTasks IIS2012Alerts Report Script Alert Rule</Name>
+          <Description>{1}
+
+{2}</Description>
+        </DisplayString>
+        <DisplayString ElementID="Proactive.DailyTasks.IIS2012Alerts.Report.Script.Task.Alert.Rule">
+          <Name>Proactive DailyTasks IIS2012Alerts task Report Manual Task Rule</Name>
+        </DisplayString>
+        <DisplayString ElementID="Proactive.DailyTasks.IIS2012Alerts.Report.Script.Task.Rule.AlertMessage">
+          <Name>Proactive DailyTasks IIS2012Alerts Report Script Task Rule Alert</Name>
+          <Description>{0}</Description>
+        </DisplayString>
+        <DisplayString ElementID="Proactive.DailyTasks.IIS2012Alerts.Report.Script.Task">
+          <Name>Proactive DailyTasks IIS2012Alerts Autoclose Report Script Task</Name>
+          <Description>Proactive DailyTasks IIS2012Alerts AutoClose task to kick off on-demand</Description>
+        </DisplayString>
+        <DisplayString ElementID="Override.Microsoft.Windows.InternetInformationServices.8.2012.ServerRole.Discovery">
+          <Name>NotUsed</Name>
+          <Description>Created 2016-10-28 Disable IIS discovery for servers</Description>
+        </DisplayString>
+        <DisplayString ElementID="Override.Microsoft.Windows.InternetInformationServices.6.2.FTPServer.FTPServiceCurrentConnections.Collection">
+          <Name>NotUsed</Name>
+          <Description>Disabling Performance Counters for IIS</Description>
+        </DisplayString>
+        <DisplayString ElementID="OverrideForRuleMicrosoftWindowsInternetInformationServices62FTPServerFTPServiceBytesTotalSecCollectionForContextMicrosoftWindowsInternetInformationServices62FTPServere80ab9ad787e48cc9dbfd5bcc36ec1c1">
+          <Name>NotUsed</Name>
+          <Description>Disabling Performance Counters for IIS</Description>
+        </DisplayString>
+        <DisplayString ElementID="OverrideForRuleMicrosoftWindowsInternetInformationServices62WebServerWebServiceBytesTotalSecCollectionForContextMicrosoftWindowsInternetInformationServices62WebServer2501228dc846476fa5bc82a142634ac4">
+          <Name>NotUsed</Name>
+          <Description>Disabling Performance Counters for IIS</Description>
+        </DisplayString>
+        <DisplayString ElementID="OverrideForRuleMicrosoftWindowsInternetInformationServices62WebServerWebServiceBytesReceivedSecCollectionForContextMicrosoftWindowsInternetInformationServices62WebServer7ec4c8818ae04e74ab6563382857de29">
+          <Name>NotUsed</Name>
+          <Description>Disabling Performance Counters for IIS</Description>
+        </DisplayString>
+        <DisplayString ElementID="OverrideForRuleMicrosoftWindowsInternetInformationServices62WebServerWebServiceConnectionAttemptsPerSecondForContextMicrosoftWindowsInternetInformationServices62WebServer30af5792777140f3b7db10aa6ba6af22">
+          <Name>NotUsed</Name>
+          <Description>Disabling Performance Counters for IIS</Description>
+        </DisplayString>
+        <DisplayString ElementID="OverrideForRuleMicrosoftWindowsInternetInformationServices62WebServerWebServiceCurrentConnectionsCollectionForContextMicrosoftWindowsInternetInformationServices62WebServercf17b27cd0a644bcaad8574c708ee5e6">
+          <Name>NotUsed</Name>
+          <Description>Disabling Performance Counters for IIS</Description>
+        </DisplayString>
+        <DisplayString ElementID="OverrideForRuleMicrosoftWindowsInternetInformationServices62WebServerWebServiceBytesSentSecCollectionForContextMicrosoftWindowsInternetInformationServices62WebServerd305093d96d3404aa433b55ffd01f83a">
+          <Name>NotUsed</Name>
+          <Description>Disabling Performance Counters for IIS</Description>
+        </DisplayString>
+        <DisplayString ElementID="OverrideForRuleMicrosoftWindowsInternetInformationServices62WebServerWebServiceTotalMethodRequestsPerSecondsForContextMicrosoftWindowsInternetInformationServices62WebServerf8ca8ff3cd3a481d9c9c23ee1048782a">
+          <Name>NotUsed</Name>
+          <Description>Disabling Performance Counters for IIS</Description>
+        </DisplayString>
+        <DisplayString ElementID="OverrideForRuleMicrosoftWindowsInternetInformationServices62LegacySMTPServerSMTPServerBytesReceivedSecCollectionForContextMicrosoftWindowsInternetInformationServices62LegacySMTPServera14a2a9eb3db438983a779e7a388a26b">
+          <Name>NotUsed</Name>
+          <Description>Disabling Performance Counters for IIS</Description>
+        </DisplayString>
+        <DisplayString ElementID="OverrideForRuleMicrosoftWindowsInternetInformationServices62LegacySMTPServerSMTPServerInboundConnectionsCurrentCollectionForContextMicrosoftWindowsInternetInformationServices62LegacySMTPServer368d56c7ad1b498f8013232f603f8c78">
+          <Name>NotUsed</Name>
+          <Description>Disabling Performance Counters for IIS</Description>
+        </DisplayString>
+        <DisplayString ElementID="OverrideForRuleMicrosoftWindowsInternetInformationServices62LegacySMTPServerSMTPServerMessageBytesReceivedSecCollectionForContextMicrosoftWindowsInternetInformationServices62LegacySMTPServer77d2130fd74049d3b6127a0e62d5a5bd">
+          <Name>NotUsed</Name>
+          <Description>Disabling Performance Counters for IIS</Description>
+        </DisplayString>
+        <DisplayString ElementID="OverrideForRuleMicrosoftWindowsInternetInformationServices62LegacySMTPServerSMTPServerOutboundConnectionsCurrentCollectionForContextMicrosoftWindowsInternetInformationServices62LegacySMTPServer130170ec0d3e41b694f315b6f7f99978">
+          <Name>NotUsed</Name>
+          <Description>Disabling Performance Counters for IIS</Description>
+        </DisplayString>
+        <DisplayString ElementID="OverrideForRuleMicrosoftWindowsInternetInformationServices62LegacySMTPServerSMTPServerMessagesDeliveredSecCollectionForContextMicrosoftWindowsInternetInformationServices62LegacySMTPServer8cdf629f70bd415793415d8f42fe2aa6">
+          <Name>NotUsed</Name>
+          <Description>Disabling Performance Counters for IIS</Description>
+        </DisplayString>
+        <DisplayString ElementID="OverrideForRuleMicrosoftWindowsInternetInformationServices62LegacySMTPServerSMTPServerMessagesSentSecCollectionForContextMicrosoftWindowsInternetInformationServices62LegacySMTPServer13c4bf0a5dba4289ae1ea08cd5d44a48">
+          <Name>NotUsed</Name>
+          <Description>Disabling Performance Counters for IIS</Description>
+        </DisplayString>
+        <DisplayString ElementID="OverrideForRuleMicrosoftWindowsInternetInformationServices62LegacySMTPServerSMTPServerBytesTotalSecCollectionForContextMicrosoftWindowsInternetInformationServices62LegacySMTPServer68ad754ce7b14a0eb013856321890f09">
+          <Name>NotUsed</Name>
+          <Description>Disabling Performance Counters for IIS</Description>
+        </DisplayString>
+        <DisplayString ElementID="OverrideForRuleMicrosoftWindowsInternetInformationServices62LegacySMTPServerSMTPServerTotalmessagessubmittedCollectionForContextMicrosoftWindowsInternetInformationServices62LegacySMTPServer035fb13c54274258b7d97b353247f074">
+          <Name>NotUsed</Name>
+          <Description>Disabling Performance Counters for IIS</Description>
+        </DisplayString>
+        <DisplayString ElementID="OverrideForRuleMicrosoftWindowsInternetInformationServices62LegacySMTPServerSMTPServerMessageBytesSentSecCollectionForContextMicrosoftWindowsInternetInformationServices62LegacySMTPServer46a6394ff18643f3976d8d13549ea043">
+          <Name>NotUsed</Name>
+          <Description>Disabling Performance Counters for IIS</Description>
+        </DisplayString>
+        <DisplayString ElementID="OverrideForRuleMicrosoftWindowsInternetInformationServices62LegacySMTPServerSMTPServerBytesSentSecCollectionForContextMicrosoftWindowsInternetInformationServices62LegacySMTPServer22ce5f2d3416449697f02825f6b61992">
+          <Name>NotUsed</Name>
+          <Description>Disabling Performance Counters for IIS</Description>
+        </DisplayString>
+        <DisplayString ElementID="OverrideForRuleMicrosoftWindowsInternetInformationServices62LegacySMTPServerSMTPServerMessagesReceivedSecCollectionForContextMicrosoftWindowsInternetInformationServices62LegacySMTPServer9534d8e9d84c4c9d8e585ca5e04a3233">
+          <Name>NotUsed</Name>
+          <Description>Disabling Performance Counters for IIS</Description>
+        </DisplayString>
+        <DisplayString ElementID="OverrideForRuleMicrosoftWindowsInternetInformationServices62LegacySMTPVirtualServerSMTPVirtualServerBytesReceivedSecCollectionForContextMicrosoftWindowsInternetInformationServices62LegacySMTPVirtualServer2f5e257e0d5846bb8ff27c499da556e">
+          <Name>NotUsed</Name>
+          <Description>Disabling Performance Counters for IIS</Description>
+        </DisplayString>
+        <DisplayString ElementID="OverrideForRuleMicrosoftWindowsInternetInformationServices62LegacySMTPVirtualServerSMTPVirtualServerTotalmessagessubmittedCollectionForContextMicrosoftWindowsInternetInformationServices62LegacySMTPVirtualServer26ce7ac583bc4447b548fd041">
+          <Name>NotUsed</Name>
+          <Description>Disabling Performance Counters for IIS</Description>
+        </DisplayString>
+        <DisplayString ElementID="OverrideForRuleMicrosoftWindowsInternetInformationServices62LegacySMTPVirtualServerSMTPVirtualServerMessagesDeliveredSecCollectionForContextMicrosoftWindowsInternetInformationServices62LegacySMTPVirtualServer6943b6138461488590b5d5383ce">
+          <Name>NotUsed</Name>
+          <Description>Disabling Performance Counters for IIS</Description>
+        </DisplayString>
+        <DisplayString ElementID="OverrideForRuleMicrosoftWindowsInternetInformationServices62LegacySMTPVirtualServerSMTPVirtualServerOutboundConnectionsCurrentCollectionForContextMicrosoftWindowsInternetInformationServices62LegacySMTPVirtualServerd0ee0e77052d4d68bd475">
+          <Name>NotUsed</Name>
+          <Description>Disabling Performance Counters for IIS</Description>
+        </DisplayString>
+        <DisplayString ElementID="OverrideForRuleMicrosoftWindowsInternetInformationServices62LegacySMTPVirtualServerSMTPVirtualServerMessagesReceivedSecCollectionForContextMicrosoftWindowsInternetInformationServices62LegacySMTPVirtualServerb14c00b42f2241bf8c7201b07cb7">
+          <Name>NotUsed</Name>
+          <Description>Disabling Performance Counters for IIS</Description>
+        </DisplayString>
+        <DisplayString ElementID="OverrideForRuleMicrosoftWindowsInternetInformationServices62LegacySMTPVirtualServerSMTPVirtualServerInboundConnectionsCurrentCollectionForContextMicrosoftWindowsInternetInformationServices62LegacySMTPVirtualServerbb6fe6af05bf4d17ad1d64">
+          <Name>NotUsed</Name>
+          <Description>Disabling Performance Counters for IIS</Description>
+        </DisplayString>
+        <DisplayString ElementID="OverrideForRuleMicrosoftWindowsInternetInformationServices62LegacySMTPVirtualServerSMTPVirtualServerBytesTotalSecCollectionForContextMicrosoftWindowsInternetInformationServices62LegacySMTPVirtualServer390f976b579e41208b83124e1d347aa5">
+          <Name>NotUsed</Name>
+          <Description>Disabling Performance Counters for IIS</Description>
+        </DisplayString>
+        <DisplayString ElementID="OverrideForRuleMicrosoftWindowsInternetInformationServices62LegacySMTPVirtualServerSMTPVirtualServerMessagesSentSecCollectionForContextMicrosoftWindowsInternetInformationServices62LegacySMTPVirtualServer00f268d595754653bda1197da78d312c">
+          <Name>NotUsed</Name>
+          <Description>Disabling Performance Counters for IIS</Description>
+        </DisplayString>
+        <DisplayString ElementID="OverrideForRuleMicrosoftWindowsInternetInformationServices62LegacySMTPVirtualServerSMTPVirtualServerMessageBytesReceivedSecCollectionForContextMicrosoftWindowsInternetInformationServices62LegacySMTPVirtualServerf1d3d991deb3435cb93d9e1a">
+          <Name>NotUsed</Name>
+          <Description>Disabling Performance Counters for IIS</Description>
+        </DisplayString>
+        <DisplayString ElementID="OverrideForRuleMicrosoftWindowsInternetInformationServices62LegacySMTPVirtualServerSMTPVirtualServerBytesSentSecCollectionForContextMicrosoftWindowsInternetInformationServices62LegacySMTPVirtualServerca0d2f39e08d47a7b70146736dab88d1">
+          <Name>NotUsed</Name>
+          <Description>Disabling Performance Counters for IIS</Description>
+        </DisplayString>
+        <DisplayString ElementID="OverrideForRuleMicrosoftWindowsInternetInformationServices62LegacySMTPVirtualServerSMTPVirtualServerMessageBytesSentSecCollectionForContextMicrosoftWindowsInternetInformationServices62LegacySMTPVirtualServer2c1a8be73179422b81972dd83a8d">
+          <Name>NotUsed</Name>
+          <Description>Disabling Performance Counters for IIS</Description>
+        </DisplayString>
+      </DisplayStrings>
+    </LanguagePack>
+  </LanguagePacks>
+</ManagementPack>
