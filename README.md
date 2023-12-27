@@ -8,7 +8,7 @@ Blog [https://kevinjustin.com/blog/2023/08/30/IIS-addendum-packs/](https://kevin
 
 ### Microsoft Windows Internet Information Services 2012 Addendum 1.0.0.4
 
-Download here
+Download [here](https://github.com/theKevinJustin/IISAddendums/blob/main/Microsoft.Windows.Internet.Information.Services.2012.Addendum.xml)
 
 # Version History:
 ```
