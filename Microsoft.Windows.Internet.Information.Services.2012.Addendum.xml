@@ -2,7 +2,7 @@
   <Manifest>
     <Identity>
       <ID>Microsoft.Windows.Internet.Information.Services.2012.Addendum</ID>
-      <Version>1.0.0.3</Version>
+      <Version>1.0.0.4</Version>
     </Identity>
     <Name>Microsoft Windows Internet Information Services 2012 Addendum</Name>
     <References>
@@ -65,8 +65,8 @@
                   <WeeklySchedule>
                     <Windows>
                       <Daily>
-                        <Start>10:14</Start>
-                        <End>10:34</End>
+                        <Start>06:14</Start>
+                        <End>06:34</End>
                         <DaysOfWeekMask>62</DaysOfWeekMask>
                       </Daily>
                     </Windows>
@@ -102,7 +102,7 @@ $whoami = whoami
 # Load MOMScript API
 $momapi = New-Object -comObject MOM.ScriptAPI
 #Log script event that we are starting task
-$momapi.LogScriptEvent($ScriptName,$EventID,0,"`n Script is starting. `n Running as ($whoami).")
+$momapi.LogScriptEvent($ScriptName,$EventID,0,"Script is starting. `n Running as ($whoami).")
 #=================================================================================
 
 
@@ -118,6 +118,7 @@ $bag = $momapi.CreatePropertyBag()
 
 #For a simple example - get files in Windows Temp:
 $date = get-date -uFormat "%Y-%m-%d"
+$Age = [DateTime](Get-Date).AddDays(-7)
 
 # Grab past 24 hours
 if ( (get-date).DayOfWeek -ne "Monday" )
@@ -129,8 +130,9 @@ if ( (get-date).DayOfWeek -eq "Monday" )
 	$Time = [DateTime](Get-Date).AddDays(-3)
 	}
 	
-$momapi.LogScriptEvent($ScriptName,$EventID,0,"Gather IIS2012 Alerts for date ($date).")
- 
+$momapi.LogScriptEvent($ScriptName,$EventID,0,"Gather IIS 2016+ Alerts for date ($date).")
+
+
 # Gather WINOS alerts
 ## Grab the MP, get the Monitors and Rules from the MP, then grab all alerts found inside the Monitors/Rules
 $SCOMCoreMP = Get-SCOMManagementPack -DisplayName "Microsoft Windows Server 2012 Internet Information Services 8"
@@ -153,9 +155,10 @@ $AutoClosed = $SCOMCoreMonitorAlerts.Count + $SCOMCoreRuleAlerts.Count
 $Test = $SCOMCoreReportAlerts.Count
 
 
-$momapi.LogScriptEvent($ScriptName,$EventID,0,"IIS alerts gathered for ($date).")
+$momapi.LogScriptEvent($ScriptName,$EventID,0,"IIS2012 alerts gathered for ($date).")
 
-  
+
+
 #
 # Build report
 #===================================
@@ -166,7 +169,7 @@ if ($SCOMOpenReportAlerts.Count -eq 0 )
 	$Message = "ZERO IIS 2012 alerts for ($date)"
 	$IISAMessage += "ZERO IIS 2012 alerts for ($date)"
 	$momapi.LogScriptEvent($ScriptName,$EventID,0,"$Message")
-	}	
+	}
 
 
 if ($SCOMOpenReportAlerts.Count -gt 0 )
@@ -174,10 +177,10 @@ if ($SCOMOpenReportAlerts.Count -gt 0 )
 	$IISAMessage += ""
 	$IISAMessage += "Alert Count = $($SCOMOpenReportAlerts.Count)"
 	$IISAMessage += ""
-	$IISAMessage += "# IIS 2012 Monitors auto-closed"
+	$IISAMessage += "# IIS 2016+ Monitors auto-closed"
 	$IISAMessage += "#=========================================================="
-	$IISAMessage += "# Number of historical IIS 2012 alerts = $($SCOMCoreReportAlerts.Count)"
-	$IISAMessage += "# Number of OPEN IIS 2012 alert monitors AND rules = $($SCOMOpenReportAlerts.Count)"
+	$IISAMessage += "# Number of historical IIS alerts = $($SCOMCoreReportAlerts.Count)"
+	$IISAMessage += "# Number of OPEN IIS alert monitors AND rules = $($SCOMOpenReportAlerts.Count)"
 	$IISAMessage += "#=========================================================="
 	$IISAMessage += ""
 	$IISAMessage += "#==============================================="
@@ -204,7 +207,7 @@ $IISAMessage = $IISAMessage | out-string
   $Result = "GOOD"
   $Message = "IIS Monitors auto-closed for ($date)"
 
-  $momapi.LogScriptEvent($ScriptName,$EventID,0,"`n# IIS Monitors auto-closed for ($date). `n `n$IISAMessage")
+  $momapi.LogScriptEvent($ScriptName,$EventID,0,"IIS2012 Monitors auto-closed for ($date). `n `n$IISAMessage")
 
 #$bag.AddValue('Result',$Result)
 $bag.AddValue('Count',$Test)
@@ -216,11 +219,24 @@ $bag.AddValue('Summary',$IISAMessage)
 $bag
 
 
+# Rule closure logic
+#=================================================================================
+$momapi.LogScriptEvent($ScriptName,$EventID,0,"IIS2012 alert rules automation started for ($date).")
 
-#
-# If Cleanup needed, array of report monitors
+$SCOMCoreRulesToClear = $SCOMCoreRuleAlerts | where { ( $_.TimeAdded -lt $Age ) }
+# Convert Age back to days for alert properties logging
+$Days = ((Get-date) - $Age).Days
+if ( $SCOMCoreRulesToClear.Count -gt 0 )
+	{
+	$SCOMCoreRulesToClear | Resolve-SCOMAlert -Comment "Closing $Days day old alerts after report alert generated - IIS2012 Addendum Automation DS"
+	}
 
-# Reset Monitors Script
+# Write event for rule closure
+$momapi.LogScriptEvent($ScriptName,$EventID,0,"IIS2012 Monitors rule auto-close completed for ($date).")
+
+
+#=================================================================================
+# Reset Monitors Script base code modified
 # Put ps1 in mgmtpacks folder
 # https://sc.scomurr.com/scom-2012-monitor-reset-cleaning-up-the-environment/
 #	Download
@@ -229,43 +245,74 @@ $bag
 #Alternate
 #https://gallery.technet.microsoft.com/scriptcenter/Auto-reset-script-for-d8b775ca
 
+# Changed up logic to sort unique classes in mgmnt pack families.
+# Added Age variable for monitors thanks to Aris Somatis - $Age specified in top level variables
+# Cycling through monitors made reset loop huge ~650 monitors when only ~50 classes
+# New logic reduced runtime from 8 minutes to roughly 8 seconds
+#=================================================================================
+
+# Write event for rule closure
+$momapi.LogScriptEvent($ScriptName,$EventID,0,"Proactive DailyTasks IIS2012 Monitors reset started for ($date).")
 
 
-
-if ( $SCOMCoreMonitorAlerts.Count -gt 0 )
-{
-foreach ($MonitorDisplayName in $SCOMCoreMonitorAlerts)
+if ( $SCOMCoreReportAlerts.Count -gt 0 )
 	{
-	$Monitors = @(Get-SCOMMonitor -displayname $MonitorDisplayName)
+	# Get classes - Examples Microsoft.Windows.Server.AD.2016.Discovery, Microsoft.Windows.Server.AD.Library
+		$Library = Get-SCOMManagementPack -name "Microsoft.Windows.InternetInformationServices.CommonLibrary"
+			#get-scomclass -ManagementPack $Library
+		$Monitoring = $SCOMCoreMP
+		$Discovery = Get-SCOMManagementPack -name Microsoft.Windows.Server.AD.2016.Discovery
+
+	# IIS pack naming
+	$IISClasses = @(Get-SCOMClass -ManagementPack $Library; Get-SCOMClass -ManagementPack $Monitoring; )
+	$IISClass = $IISClasses | sort -property Name -uniq
+	# Debug
+	$IISClass.Count
 
 	# Set up monitor objects to reset
-	foreach ($Monitor in $Monitors)
+	foreach ($Class in $IISClass)
 		{
-		$MonitorClass = Get-SCOMClass -Id $Monitor.Target.Id
-		$ActiveMonitors = Get-SCOMClassInstance -Class $MonitorClass | ? { ($_.healthstate -ne 'Success') -AND ( $_.healthstate -ne 'Uninitialized') -AND ($_.IsAvailable -eq $true) }
-		write-host "Found" + $ActiveMonitors.Count + "active monitors."
-		if ( $ActiveMonitors -ne $null)
+		$ActiveMonitors = @(Get-SCOMClassInstance -Class $Class | ? { ($_.healthstate -ne 'Success') -AND ( $_.healthstate -ne 'Uninitialized') -AND ($_.IsAvailable -eq $true) } )
+		# Debug
+		$ActiveMonitors.Count
+		# $ActiveMonitors | fl -property *
+		write-host "Found" $ActiveMonitors.Count "unhealthy monitors for class" $Class
+		foreach ( $UnhealthyOLDMonitor in $ActiveMonitors )
 			{
-			foreach ($ActiveMonitor in $ActiveMonitors)
+			#if ( $UnhealthyOLDMonitor.AvailabilityLastModified -lt $Age )
+			if ( $UnhealthyOLDMonitor.StateLastModified -lt $Age )
 				{
-				write-host " Resetting Health State on '" +$ActiveMonitor.FullName + "'" 
-				$ActiveMonitor.ResetMonitoringState($Monitor.ID)
+				#$UnhealthyMonitors += $ActiveMonitors.Count
+				#UnhealthyOLDMonitor | select AvailabilityLastModified,Path,DisplayName
+				#$UnhealthyOLDMonitor.Count
+				#write-host "Found" + $UnhealthyOLDMonitor.Count + "unhealthy monitor beyond" $Age "days."
+				#write-host ""
+				if ( $ActiveMonitors.Count -gt 0)
+					{
+					foreach ( $ActiveMonitor in $UnhealthyOLDMonitor )
+						{
+						# Debug
+						$ActiveMonitor.ID
+						write-host " Resetting Health State on '" + $ActiveMonitor.FullName + "'" 
+						write-host ""
+						$ActiveMonitor.ResetMonitoringState($ActiveMonitor)
+						}
+					}
 				}
 			}
 		}
+	# Debug
+	#$MonitorClass | fl -property *
+	#$MonitorClass | select DisplayName,ID
 	}
-}
-
-$momapi.LogScriptEvent($ScriptName,$EventID,0,"IIS Monitors auto-close completed for ($date).")
 
 
-#
-# (Rules) Alerts to auto close after reset monitor
-# Resolve alerts after report built
-$SCOMCoreRuleAlerts | Resolve-SCOMAlert
+# Debug Write event for rule closure
+#=================================================================================
+# Write event for rule closure
+$momapi.LogScriptEvent($ScriptName,$EventID,0,"Proactive DailyTasks IIS2012 monitor reset completed for ($date)")
 
 
-$momapi.LogScriptEvent($ScriptName,$EventID,0,"IIS alert rules resolved for ($date).")
 #=================================================================================
 # End MAIN script section
  
@@ -275,7 +322,7 @@ $momapi.LogScriptEvent($ScriptName,$EventID,0,"IIS alert rules resolved for ($da
 #Log an event for script ending and total execution time.
 $EndTime = Get-Date
 $ScriptTime = ($EndTime - $StartTime).TotalSeconds
-$momapi.LogScriptEvent($ScriptName,$EventID,0,"`n Script Completed. `n Script Runtime: ($ScriptTime) seconds.")
+$momapi.LogScriptEvent($ScriptName,$EventID,0,"Script Completed. `n Script Runtime: ($ScriptTime) seconds.")
 #=================================================================================
 # End of script
                 </ScriptBody>
@@ -336,6 +383,7 @@ $ScriptName = "Proactive.DailyTasks.IIS2012Alerts.Close.Script.Alert.WA.v1003.ps
 $EventID = "581"
 #=================================================================================
 
+
 # Starting Script section - All scripts get this
 #=================================================================================
 # Gather the start time of the script
@@ -345,7 +393,7 @@ $whoami = whoami
 # Load MOMScript API
 $momapi = New-Object -comObject MOM.ScriptAPI
 #Log script event that we are starting task
-$momapi.LogScriptEvent($ScriptName,$EventID,0,"`n Script is starting. `n Running as ($whoami).")
+$momapi.LogScriptEvent($ScriptName,$EventID,0,"Script is starting. `n Running as ($whoami).")
 #=================================================================================
 
 
@@ -361,6 +409,7 @@ $bag = $momapi.CreatePropertyBag()
 
 #For a simple example - get files in Windows Temp:
 $date = get-date -uFormat "%Y-%m-%d"
+$Age = [DateTime](Get-Date).AddDays(-7)
 
 # Grab past 24 hours
 if ( (get-date).DayOfWeek -ne "Monday" )
@@ -372,11 +421,12 @@ if ( (get-date).DayOfWeek -eq "Monday" )
 	$Time = [DateTime](Get-Date).AddDays(-3)
 	}
 	
-$momapi.LogScriptEvent($ScriptName,$EventID,0,"Gather IIS2012 Alerts for date ($date).")
- 
+$momapi.LogScriptEvent($ScriptName,$EventID,0,"Gather IIS 2016+ Alerts for date ($date).")
+
+
 # Gather WINOS alerts
 ## Grab the MP, get the Monitors and Rules from the MP, then grab all alerts found inside the Monitors/Rules
-$SCOMCoreMP = Get-SCOMManagementPack -DisplayName "Microsoft Windows Server 2016 and 1709+ Internet Information Services 10"
+$SCOMCoreMP = Get-SCOMManagementPack -DisplayName "Microsoft Windows Server 2012 Internet Information Services 8"
 $SCOMCoreRules = $SCOMCoreMP.GetRules()
 $SCOMCoreMonitors = $SCOMCoreMP.GetMonitors()
 
@@ -396,7 +446,7 @@ $AutoClosed = $SCOMCoreMonitorAlerts.Count + $SCOMCoreRuleAlerts.Count
 $Test = $SCOMCoreReportAlerts.Count
 
 
-$momapi.LogScriptEvent($ScriptName,$EventID,0,"IIS alerts gathered for ($date).")
+$momapi.LogScriptEvent($ScriptName,$EventID,0,"IIS2012 alerts gathered for ($date).")
 
 
 
@@ -410,7 +460,7 @@ if ($SCOMOpenReportAlerts.Count -eq 0 )
 	$Message = "ZERO IIS 2012 alerts for ($date)"
 	$IISAMessage += "ZERO IIS 2012 alerts for ($date)"
 	$momapi.LogScriptEvent($ScriptName,$EventID,0,"$Message")
-	}	
+	}
 
 
 if ($SCOMOpenReportAlerts.Count -gt 0 )
@@ -418,9 +468,9 @@ if ($SCOMOpenReportAlerts.Count -gt 0 )
 	$IISAMessage += ""
 	$IISAMessage += "Alert Count = $($SCOMOpenReportAlerts.Count)"
 	$IISAMessage += ""
-	$IISAMessage += "# IIS Monitors auto-closed"
+	$IISAMessage += "# IIS 2016+ Monitors auto-closed"
 	$IISAMessage += "#=========================================================="
-	$IISAMessage += "# Number of historical IIS 2012 alerts = $($SCOMCoreReportAlerts.Count)"
+	$IISAMessage += "# Number of historical IIS alerts = $($SCOMCoreReportAlerts.Count)"
 	$IISAMessage += "# Number of OPEN IIS alert monitors AND rules = $($SCOMOpenReportAlerts.Count)"
 	$IISAMessage += "#=========================================================="
 	$IISAMessage += ""
@@ -448,7 +498,7 @@ $IISAMessage = $IISAMessage | out-string
   $Result = "GOOD"
   $Message = "IIS Monitors auto-closed for ($date)"
 
-  $momapi.LogScriptEvent($ScriptName,$EventID,0,"`n# IIS Monitors auto-closed for ($date). `n `n$IISAMessage")
+  $momapi.LogScriptEvent($ScriptName,$EventID,0,"IIS2012 Monitors auto-closed for ($date). `n `n$IISAMessage")
 
 #$bag.AddValue('Result',$Result)
 $bag.AddValue('Count',$Test)
@@ -460,11 +510,24 @@ $bag.AddValue('Summary',$IISAMessage)
 $bag
 
 
+# Rule closure logic
+#=================================================================================
+$momapi.LogScriptEvent($ScriptName,$EventID,0,"IIS2012 alert rules automation started for ($date).")
 
-#
-# If Cleanup needed, array of report monitors
+$SCOMCoreRulesToClear = $SCOMCoreRuleAlerts | where { ( $_.TimeAdded -lt $Age ) }
+# Convert Age back to days for alert properties logging
+$Days = ((Get-date) - $Age).Days
+if ( $SCOMCoreRulesToClear.Count -gt 0 )
+	{
+	$SCOMCoreRulesToClear | Resolve-SCOMAlert -Comment "Closing $Days day old alerts after report alert generated - IIS2012 Addendum Automation DS"
+	}
 
-# Reset Monitors Script
+# Write event for rule closure
+$momapi.LogScriptEvent($ScriptName,$EventID,0,"IIS2012 Monitors rule auto-close completed for ($date).")
+
+
+#=================================================================================
+# Reset Monitors Script base code modified
 # Put ps1 in mgmtpacks folder
 # https://sc.scomurr.com/scom-2012-monitor-reset-cleaning-up-the-environment/
 #	Download
@@ -473,43 +536,74 @@ $bag
 #Alternate
 #https://gallery.technet.microsoft.com/scriptcenter/Auto-reset-script-for-d8b775ca
 
+# Changed up logic to sort unique classes in mgmnt pack families.
+# Added Age variable for monitors thanks to Aris Somatis - $Age specified in top level variables
+# Cycling through monitors made reset loop huge ~650 monitors when only ~50 classes
+# New logic reduced runtime from 8 minutes to roughly 8 seconds
+#=================================================================================
+
+# Write event for rule closure
+$momapi.LogScriptEvent($ScriptName,$EventID,0,"Proactive DailyTasks IIS2012 Monitors reset started for ($date).")
 
 
-
-if ( $SCOMCoreMonitorAlerts.Count -gt 0 )
-{
-foreach ($MonitorDisplayName in $SCOMCoreMonitorAlerts)
+if ( $SCOMCoreReportAlerts.Count -gt 0 )
 	{
-	$Monitors = @(Get-SCOMMonitor -displayname $MonitorDisplayName)
+	# Get classes - Examples Microsoft.Windows.Server.AD.2016.Discovery, Microsoft.Windows.Server.AD.Library
+		$Library = Get-SCOMManagementPack -name "Microsoft.Windows.InternetInformationServices.CommonLibrary"
+			#get-scomclass -ManagementPack $Library
+		$Monitoring = $SCOMCoreMP
+		$Discovery = Get-SCOMManagementPack -name Microsoft.Windows.Server.AD.2016.Discovery
+
+	# IIS pack naming
+	$IISClasses = @(Get-SCOMClass -ManagementPack $Library; Get-SCOMClass -ManagementPack $Monitoring; )
+	$IISClass = $IISClasses | sort -property Name -uniq
+	# Debug
+	$IISClass.Count
 
 	# Set up monitor objects to reset
-	foreach ($Monitor in $Monitors)
+	foreach ($Class in $IISClass)
 		{
-		$MonitorClass = Get-SCOMClass -Id $Monitor.Target.Id
-		$ActiveMonitors = Get-SCOMClassInstance -Class $MonitorClass | ? { ($_.healthstate -ne 'Success') -AND ( $_.healthstate -ne 'Uninitialized') -AND ($_.IsAvailable -eq $true) }
-		write-host "Found" + $ActiveMonitors.Count + "active monitors."
-		if ( $ActiveMonitors -ne $null)
+		$ActiveMonitors = @(Get-SCOMClassInstance -Class $Class | ? { ($_.healthstate -ne 'Success') -AND ( $_.healthstate -ne 'Uninitialized') -AND ($_.IsAvailable -eq $true) } )
+		# Debug
+		$ActiveMonitors.Count
+		# $ActiveMonitors | fl -property *
+		write-host "Found" $ActiveMonitors.Count "unhealthy monitors for class" $Class
+		foreach ( $UnhealthyOLDMonitor in $ActiveMonitors )
 			{
-			foreach ($ActiveMonitor in $ActiveMonitors)
+			#if ( $UnhealthyOLDMonitor.AvailabilityLastModified -lt $Age )
+			if ( $UnhealthyOLDMonitor.StateLastModified -lt $Age )
 				{
-				write-host " Resetting Health State on '" +$ActiveMonitor.FullName + "'" 
-				$ActiveMonitor.ResetMonitoringState($Monitor.ID)
+				#$UnhealthyMonitors += $ActiveMonitors.Count
+				#UnhealthyOLDMonitor | select AvailabilityLastModified,Path,DisplayName
+				#$UnhealthyOLDMonitor.Count
+				#write-host "Found" + $UnhealthyOLDMonitor.Count + "unhealthy monitor beyond" $Age "days."
+				#write-host ""
+				if ( $ActiveMonitors.Count -gt 0)
+					{
+					foreach ( $ActiveMonitor in $UnhealthyOLDMonitor )
+						{
+						# Debug
+						$ActiveMonitor.ID
+						write-host " Resetting Health State on '" + $ActiveMonitor.FullName + "'" 
+						write-host ""
+						$ActiveMonitor.ResetMonitoringState($ActiveMonitor)
+						}
+					}
 				}
 			}
 		}
+	# Debug
+	#$MonitorClass | fl -property *
+	#$MonitorClass | select DisplayName,ID
 	}
-}
-
-$momapi.LogScriptEvent($ScriptName,$EventID,0,"IIS Monitors auto-close completed for ($date).")
 
 
-#
-# (Rules) Alerts to auto close after reset monitor
-# Resolve alerts after report built
-$SCOMCoreRuleAlerts | Resolve-SCOMAlert
+# Debug Write event for rule closure
+#=================================================================================
+# Write event for rule closure
+$momapi.LogScriptEvent($ScriptName,$EventID,0,"Proactive DailyTasks IIS2012 monitor reset completed for ($date)")
 
 
-$momapi.LogScriptEvent($ScriptName,$EventID,0,"IIS alert rules resolved for ($date).")
 #=================================================================================
 # End MAIN script section
  
@@ -519,7 +613,7 @@ $momapi.LogScriptEvent($ScriptName,$EventID,0,"IIS alert rules resolved for ($da
 #Log an event for script ending and total execution time.
 $EndTime = Get-Date
 $ScriptTime = ($EndTime - $StartTime).TotalSeconds
-$momapi.LogScriptEvent($ScriptName,$EventID,0,"`n Script Completed. `n Script Runtime: ($ScriptTime) seconds.")
+$momapi.LogScriptEvent($ScriptName,$EventID,0,"Script Completed. `n Script Runtime: ($ScriptTime) seconds.")
 #=================================================================================
 # End of script
                 </ScriptBody>
@@ -710,7 +804,7 @@ $momapi.LogScriptEvent($ScriptName,$EventID,0,"`n Script Completed. `n Script Ru
                     <Property>$MPElement[Name="Windows!Microsoft.Windows.Computer"]/PrincipalName$</Property>
                   </ValueExpression>
                   <Operator>MatchesRegularExpression</Operator>
-                  <Pattern>(?i)sweb|AA|FF|MM|SMTP|SPPUB</Pattern>
+                  <Pattern>(?i)##IISWebServersRegExHere##</Pattern>
                 </RegExExpression>
               </Expression>
             </MembershipRule>
@@ -916,6 +1010,7 @@ $momapi.LogScriptEvent($ScriptName,$EventID,0,"`n Script Completed. `n Script Ru
         <DisplayString ElementID="Microsoft.Windows.Internet.Information.Services.2012.Addendum">
           <Name>Microsoft Windows Internet Information Services 2012 Addendum</Name>
           <Description>
+v1.0.0.4 27 Dec 2023 Updated whitespace Audit, pack/Monitor/rule reset logic changed
 v1.0.0.3 18 Jul 2023 Updated reports to informational
 v1.0.0.1 19 Jan 2023 Updates for Get method, daily reports/closure automation
 v1.0.0.0  2 Aug 2022 Initial pack with automated closure, reports, OFF/ON logic for IIS</Description>
