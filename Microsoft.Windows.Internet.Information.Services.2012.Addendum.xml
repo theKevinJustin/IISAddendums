@@ -2,7 +2,7 @@
   <Manifest>
     <Identity>
       <ID>Microsoft.Windows.Internet.Information.Services.2012.Addendum</ID>
-      <Version>1.0.0.4</Version>
+      <Version>1.0.0.5</Version>
     </Identity>
     <Name>Microsoft Windows Internet Information Services 2012 Addendum</Name>
     <References>
@@ -75,7 +75,7 @@
                 </Scheduler>
               </DataSource>
               <ProbeAction ID="PA" TypeID="Windows!Microsoft.Windows.PowerShellPropertyBagTriggerOnlyProbe">
-                <ScriptName>Proactive.DailyTasks.IIS2012Alerts.Close.Script.DS.v1003.ps1</ScriptName>
+                <ScriptName>Proactive.DailyTasks.IIS2012Alerts.Close.Script.DS.v1005.ps1</ScriptName>
                 <ScriptBody>
 #=================================================================================
 #  Script to gather IIS2012 alerts and close datasource
@@ -89,7 +89,7 @@
 #=================================================================================
 # Assign script name variable for use in event logging.  
 # ScriptName should be the same as the ID of the module that the script is contained in
-$ScriptName = "Proactive.DailyTasks.IIS2012Alerts.Close.Script.Alert.DS.v1003.ps1"
+$ScriptName = "Proactive.DailyTasks.IIS2012Alerts.Close.Script.Alert.DS.v1005.ps1"
 $EventID = "581"
 #=================================================================================
 
@@ -118,7 +118,7 @@ $bag = $momapi.CreatePropertyBag()
 
 #For a simple example - get files in Windows Temp:
 $date = get-date -uFormat "%Y-%m-%d"
-$Age = [DateTime](Get-Date).AddDays(-7)
+$Age = [DateTime](Get-Date).AddDays(-1)
 
 # Grab past 24 hours
 if ( (get-date).DayOfWeek -ne "Monday" )
@@ -139,16 +139,16 @@ $SCOMCoreMP = Get-SCOMManagementPack -DisplayName "Microsoft Windows Server 2012
 $SCOMCoreRules = $SCOMCoreMP.GetRules()
 $SCOMCoreMonitors = $SCOMCoreMP.GetMonitors()
 
-$SCOMCoreReportAlerts = Get-SCOMAlert | ? { ($_.Name -in $SCOMCoreRules.DisplayName) -or ($_.Name -in $SCOMCoreMonitors.DisplayName) }
+$SCOMCoreReportAlerts = Get-SCOMAlert -ResolutionState (0..254) | ? { ($_.Name -in $SCOMCoreRules.DisplayName) -or ($_.Name -in $SCOMCoreMonitors.DisplayName) }
 $SCOMCoreReportAlerts.Count
 
-$SCOMOpenReportAlerts = $SCOMCoreReportAlerts | ? { ( $_.ResolutionState -ne "255" ) }
+$SCOMOpenReportAlerts = $SCOMCoreReportAlerts
 $SCOMOpenReportAlerts.Count
 
-$SCOMCoreRuleAlerts = Get-SCOMAlert | ? { ( $_.Name -in $SCOMCoreRules.DisplayName) -AND ( $_.ResolutionState -ne "255" ) }
+$SCOMCoreRuleAlerts = $SCOMCoreReportAlerts | ? { ( $_.Name -in $SCOMCoreRules.DisplayName) }
 $SCOMCoreRuleAlerts.Count
 
-$SCOMCoreMonitorAlerts = Get-SCOMAlert | ? { ($_.Name -in $SCOMCoreMonitors.DisplayName ) -AND ( $_.ResolutionState -ne "255" ) }
+$SCOMCoreMonitorAlerts = $SCOMCoreReportAlerts | ? { ($_.Name -in $SCOMCoreMonitors.DisplayName ) }
 $SCOMCoreMonitorAlerts.Count
 
 $AutoClosed = $SCOMCoreMonitorAlerts.Count + $SCOMCoreRuleAlerts.Count
@@ -365,7 +365,7 @@ $momapi.LogScriptEvent($ScriptName,$EventID,0,"Script Completed. `n Script Runti
           <Composite>
             <MemberModules>
               <WriteAction ID="PSWA" TypeID="Windows!Microsoft.Windows.PowerShellWriteAction">
-                <ScriptName>Proactive.DailyTasks.IIS2012Alerts.Close.Script.Alert.WA.v1003.ps1</ScriptName>
+                <ScriptName>Proactive.DailyTasks.IIS2012Alerts.Close.Script.Alert.WA.v1005.ps1</ScriptName>
                 <ScriptBody>
 #=================================================================================
 #  Script to gather IIS2012 alerts and close via on demand task
@@ -379,7 +379,7 @@ $momapi.LogScriptEvent($ScriptName,$EventID,0,"Script Completed. `n Script Runti
 #=================================================================================
 # Assign script name variable for use in event logging.  
 # ScriptName should be the same as the ID of the module that the script is contained in
-$ScriptName = "Proactive.DailyTasks.IIS2012Alerts.Close.Script.Alert.WA.v1003.ps1"
+$ScriptName = "Proactive.DailyTasks.IIS2012Alerts.Close.Script.Alert.WA.v1005.ps1"
 $EventID = "581"
 #=================================================================================
 
@@ -409,7 +409,7 @@ $bag = $momapi.CreatePropertyBag()
 
 #For a simple example - get files in Windows Temp:
 $date = get-date -uFormat "%Y-%m-%d"
-$Age = [DateTime](Get-Date).AddDays(-7)
+$Age = [DateTime](Get-Date).AddDays(-1)
 
 # Grab past 24 hours
 if ( (get-date).DayOfWeek -ne "Monday" )
@@ -430,16 +430,16 @@ $SCOMCoreMP = Get-SCOMManagementPack -DisplayName "Microsoft Windows Server 2012
 $SCOMCoreRules = $SCOMCoreMP.GetRules()
 $SCOMCoreMonitors = $SCOMCoreMP.GetMonitors()
 
-$SCOMCoreReportAlerts = Get-SCOMAlert | ? { ($_.Name -in $SCOMCoreRules.DisplayName) -or ($_.Name -in $SCOMCoreMonitors.DisplayName) }
+$SCOMCoreReportAlerts = Get-SCOMAlert -ResolutionState (0..254) | ? { ($_.Name -in $SCOMCoreRules.DisplayName) -or ($_.Name -in $SCOMCoreMonitors.DisplayName) }
 $SCOMCoreReportAlerts.Count
 
-$SCOMOpenReportAlerts = $SCOMCoreReportAlerts | ? { ( $_.ResolutionState -ne "255" ) }
+$SCOMOpenReportAlerts = $SCOMCoreReportAlerts
 $SCOMOpenReportAlerts.Count
 
-$SCOMCoreRuleAlerts = Get-SCOMAlert | ? { ( $_.Name -in $SCOMCoreRules.DisplayName) -AND ( $_.ResolutionState -ne "255" ) }
+$SCOMCoreRuleAlerts = $SCOMCoreReportAlerts | ? { ( $_.Name -in $SCOMCoreRules.DisplayName) }
 $SCOMCoreRuleAlerts.Count
 
-$SCOMCoreMonitorAlerts = Get-SCOMAlert | ? { ($_.Name -in $SCOMCoreMonitors.DisplayName ) -AND ( $_.ResolutionState -ne "255" ) }
+$SCOMCoreMonitorAlerts = $SCOMCoreReportAlerts | ? { ($_.Name -in $SCOMCoreMonitors.DisplayName ) }
 $SCOMCoreMonitorAlerts.Count
 
 $AutoClosed = $SCOMCoreMonitorAlerts.Count + $SCOMCoreRuleAlerts.Count
@@ -447,7 +447,6 @@ $Test = $SCOMCoreReportAlerts.Count
 
 
 $momapi.LogScriptEvent($ScriptName,$EventID,0,"IIS2012 alerts gathered for ($date).")
-
 
 
 #
@@ -1010,6 +1009,7 @@ $momapi.LogScriptEvent($ScriptName,$EventID,0,"Script Completed. `n Script Runti
         <DisplayString ElementID="Microsoft.Windows.Internet.Information.Services.2012.Addendum">
           <Name>Microsoft Windows Internet Information Services 2012 Addendum</Name>
           <Description>
+v1.0.0.5  4 Jan 2024 Resolution State logic improvements for large environments
 v1.0.0.4 27 Dec 2023 Updated whitespace Audit, pack/Monitor/rule reset logic changed
 v1.0.0.3 18 Jul 2023 Updated reports to informational
 v1.0.0.1 19 Jan 2023 Updates for Get method, daily reports/closure automation
